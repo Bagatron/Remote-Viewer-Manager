@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ s.name }} - RV Analyzer{% endblock %}
+{% block head %}{% if s.status == 'pending' or (ai.status and ai.status.status == 'pending') %}<meta http-equiv="refresh" content="{{ 3 if s.status == 'pending' else 6 }}">{% endif %}{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <h1>{{ s.name }} <span class="badge {{ s.status }}">{{ s.status }}</span></h1>
+      <div class="muted">{{ s.original_filename }} &middot; uploaded {{ s.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>
+    </div>
+    <form action="/sessions/{{ s.id }}/delete" method="post" onsubmit="return confirm('Delete this session and all its files?')">
+      <button class="danger" type="submit">Delete</button>
+    </form>
+  </div>
+  {% if s.status == 'failed' %}<p class="failed"><b>Analysis failed:</b> {{ s.error }}</p>{% endif %}
+  {% if s.status == 'pending' %}<p class="muted">Analyzing&hellip; this page refreshes automatically.</p>{% endif %}
+</div>
+
+{% if s.status == 'done' %}
+<div class="panel">
+  <div class="stats">
+    <div class="stat"><b>{{ (s.metrics.duration_sec / 60)|round(1) }} min</b><span>Duration</span></div>
+    <div class="stat"><b>{{ s.metrics.rows }}</b><span>Samples</span></div>
+    <div class="stat"><b>{{ s.metrics.rv_raw_mean|round(3) }}</b><span>Mean Theta-Beta</span></div>
+    <div class="stat"><b>{{ s.metrics.rv_max|round(2) }}</b><span>Peak RV index (z)</span></div>
+    <div class="stat"><b>{{ s.metrics.n_events }}</b><span>Markers/events</span></div>
+  </div>
+  {% if s.metrics.quality_flags %}
+  <ul class="flags">{% for f in s.metrics.quality_flags %}<li>{{ f }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+
+{% if s.status == 'done' %}
+<div class="panel">
+  <h2>Brainwave graph</h2>
+  <div id="eegchart"><p class="muted">Loading graph&hellip;</p></div>
+  {% include "_eeg_key.html" %}
+</div>
+<script src="/static/eegchart.js"></script>
+<script>
+  EEGChart.mountFromUrl(document.getElementById('eegchart'), '/api/sessions/{{ s.id }}/series', j => j.series)
+    .then(r => { if (!r.chart) document.getElementById('eegchart').textContent = 'No graph data yet. Press Re-analyze below.'; })
+    .catch(() => { document.getElementById('eegchart').textContent = 'Could not load the graph.'; });
+</script>
+{% endif %}
+
+<div class="panel">
+  <h2>Classic annotated graph</h2>
+  <p class="muted" style="margin-top:0;font-size:13px">The original static picture, kept for reference. Markers appear on the new graph above after a re-analyze.</p>
+  <img class="plot" src="/sessions/{{ s.id }}/files/annotated_session.png" alt="Annotated session plot">
+</div>
+
+{% if has_scatter %}
+<div class="panel">
+  <h2>RV index vs. feedback</h2>
+  <img class="plot" src="/sessions/{{ s.id }}/files/rvindex_feedback_scatter.png" alt="Feedback scatter" style="max-width:560px">
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Intuitive windows</h2>
+  <table>
+    <tr><th>#</th><th>Time</th><th>RV (z)</th><th>Theta</th><th>Alpha</th><th>Beta</th></tr>
+    {% for w in windows %}
+    <tr><td>{{ w.Window }}</td><td>{{ w.TimeStamp }}</td><td>{{ w.RV_index_z }}</td><td>{{ w.Theta_sm }}</td><td>{{ w.Alpha_sm }}</td><td>{{ w.Beta_sm }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="panel" id="ai">
+  <div class="row" style="justify-content:space-between;align-items:baseline">
+    <h2>AI coach</h2>
+    {% if ai.status and ai.status.status == 'done' %}
+    <span class="muted">{{ ai.status.model }} &middot; {{ ai.status.duration_s }}s &middot; {{ ai.status.finished_at[:16]|replace('T',' ') }} UTC</span>
+    {% endif %}
+  </div>
+  {% if not ai.enabled %}
+    <p class="muted">AI feedback isn't configured. Set <code>RV_AI_BASE_URL</code> and <code>RV_AI_MODEL</code> to point at your Open WebUI/Ollama machine. Until then, here are generic prompts that are not specific to this session:</p>
+    <ul>{% for t in tips %}<li>{{ t }}</li>{% endfor %}</ul>
+  {% elif ai.status and ai.status.status == 'pending' %}
+    <p class="muted">Generating feedback on the LLM machine&hellip; the first run after the model has been idle can take a few minutes. This page refreshes automatically.</p>
+  {% else %}
+    {% if ai.status and ai.status.status == 'failed' %}
+    <p class="failed"><b>AI feedback failed:</b> {{ ai.status.error }}</p>
+    {% endif %}
+    {% if ai.html %}<div class="ai">{{ ai.html }}</div>{% endif %}
+    <form action="/sessions/{{ s.id }}/ai-feedback" method="post" style="margin-top:12px">
+      <textarea name="focus" maxlength="500" style="min-height:48px" placeholder="Optional: what should the coach focus on? (e.g. what happened around Marker 2, or why this session felt scattered)"></textarea>
+      <p><button type="submit">{{ 'Regenerate feedback' if ai.html else 'Generate AI feedback' }}</button></p>
+    </form>
+    {% if 'ai_prompt.txt' in files %}
+    <p class="muted" style="font-size:13px">The model only sees a compact numeric digest of the session, your earlier sessions and your notes, never the raw EEG.
+      <a href="/sessions/{{ s.id }}/files/ai_prompt.txt">See exactly what it was given</a>.</p>
+    {% endif %}
+  {% endif %}
+  <details style="margin-top:10px"><summary class="muted">Detected windows (plain text)</summary><pre>{{ summary }}</pre></details>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Re-run with different settings</h2>
+  <form action="/sessions/{{ s.id }}/reanalyze" method="post" class="row">
+    <label>Smoothing window <input type="number" name="window" value="{{ s.params.window }}" min="1"></label>
+    <label>Top windows <input type="number" name="top_n" value="{{ s.params.top_n }}" min="1" max="20"></label>
+    <label>Min gap (s) <input type="number" name="min_gap" value="{{ s.params.min_gap }}" min="0"></label>
+    <button type="submit">Re-analyze</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Session notes</h2>
+  <form action="/sessions/{{ s.id }}/notes" method="post">
+    <textarea name="notes" placeholder="Target, impressions, accuracy, anything you want to remember...">{{ s.notes }}</textarea>
+    <p><button type="submit">Save notes</button></p>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Stored files</h2>
+  <table>
+    {% for f in files %}
+    <tr><td>{{ f }}</td><td><a href="/sessions/{{ s.id }}/files/{{ f }}?download=true">download</a></td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

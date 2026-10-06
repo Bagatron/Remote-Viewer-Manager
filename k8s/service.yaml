@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rv-analyzer
+  labels: {app: rv-analyzer}
+spec:
+  selector: {app: rv-analyzer}
+  ports:
+    - {name: http, port: 80, targetPort: http}

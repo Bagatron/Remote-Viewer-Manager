@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}{{ t.coordinate }} - RV Analyzer{% endblock %}
+{% block head %}
+<style>
+  .coord { font:700 44px/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:2px; margin:4px 0 8px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; }
+  .toolbar button { padding:6px 12px; background:transparent; color:var(--fg); border:1px solid var(--line); }
+  .toolbar button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .toolbar .sw { width:26px; height:26px; padding:0; border-radius:50%; border:2px solid var(--line); }
+  .toolbar .sw.on { border-color:var(--fg); outline:2px solid var(--acc); }
+  .toolbar input[type=range] { width:90px; }
+  #wb { width:100%; aspect-ratio:4/3; background:#fff; border:1px solid var(--line); border-radius:8px; touch-action:none; cursor:crosshair; display:block; }
+  #wbwrap:fullscreen { background:var(--bg); padding:12px; overflow:auto; }
+  #wbwrap:fullscreen #wb { max-height:calc(100vh - 90px); width:auto; max-width:100%; margin:0 auto; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px; }
+  .cols img.pic { width:100%; border-radius:8px; border:1px solid var(--line); background:#fff; }
+  .grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; margin:12px 0; }
+  .opt { position:relative; display:block; border:2px solid var(--line); border-radius:10px; padding:6px; cursor:pointer; margin:0; }
+  .opt img { width:100%; display:block; border-radius:6px; }
+  .opt input { position:absolute; top:14px; left:14px; width:20px; height:20px; }
+  .opt .letter { position:absolute; top:10px; right:12px; background:var(--panel); border-radius:6px; padding:0 8px; font-weight:700; }
+  .opt:has(input:checked) { border-color:var(--acc); }
+  .opt.target { border-color:var(--ok); } .opt.picked { outline:3px solid var(--acc); }
+  .sketches { display:flex; flex-wrap:wrap; gap:10px; }
+  .sketches img { width:260px; max-width:100%; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  .badge.muted { color:var(--mute); }
+  input[type=range].wide { width:100%; }
+  .big { font-size:28px; font-weight:700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div>
+      <a href="/rv" class="muted" style="font-size:13px">&larr; All trials</a>
+      <div class="coord">{{ t.coordinate }}</div>
+      <span class="badge {{ 'done' if t.status == 'complete' else ('muted' if t.status == 'abandoned' else 'pending') }}">{{ t.status }}</span>
+      {% if t.judging_enabled %}<span class="badge muted">tournament judging</span>{% endif %}
+    </div>
+    <form action="/rv/trials/{{ t.id }}/delete" method="post" onsubmit="return confirm('Delete this trial, its sketches and its target?')">
+      <button class="danger" type="submit">Delete</button>
+    </form>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ assigned #}
+{% if t.status == 'assigned' %}
+<div class="panel">
+  <h2>Your target is hidden</h2>
+  <p>Focus on the coordinate above. When you are ready, describe and sketch whatever comes: shapes, textures, colours, temperature, sounds, motion, the overall feel. Quick first impressions beat careful analysis; write down any analytical guess separately as a guess.</p>
+  <p class="muted">Elapsed: <b id="timer">00:00</b> &middot; Your work is auto-saved in this browser until you submit.</p>
+</div>
+
+<div class="panel eegc" id="cap">
+  <h2>Brainwave capture <span class="badge muted">optional</span></h2>
+  <p class="muted" style="margin-top:0">Connect your Muse headband and the app records your brainwaves while you view, then draws the graph after the reveal.
+    Start the capture, then begin. Keep this page open and the screen on; reloading the page ends the capture.</p>
+  <div id="cap-blocked" hidden></div>
+  <div id="cap-ui">
+    <div class="row" style="align-items:center;gap:8px">
+      <button type="button" id="cap-connect">Connect Muse</button>
+      <button type="button" id="cap-start" disabled>Start capture</button>
+      <button type="button" id="cap-stop" disabled>Stop</button>
+      <button type="button" id="cap-save" hidden>Save a copy (CSV)</button>
+      <span id="cap-status" class="muted">Not connected</span>
+    </div>
+    <div id="cap-live" style="margin-top:12px" hidden>
+      <div id="cap-q" class="row" style="gap:14px;font-size:13px"></div>
+      <div id="cap-bars" style="margin-top:8px;max-width:420px"></div>
+    </div>
+    <div class="row" id="cap-marks" style="margin-top:12px;gap:8px;align-items:center" hidden>
+      <span class="muted" style="font-size:13px">Add a marker:</span>
+      <button type="button" data-m="begin viewing">Begin viewing</button>
+      <button type="button" data-m="impression">Impression</button>
+      <button type="button" data-m="sketching">Sketching</button>
+    </div>
+    <p id="cap-err" class="failed"></p>
+  </div>
+</div>
+
+<div class="panel" id="wbwrap">
+  <div class="toolbar">
+    <button type="button" id="t-pen" class="on">Pen</button>
+    <button type="button" id="t-eraser">Eraser</button>
+    <span id="swatches" class="row" style="gap:6px"></span>
+    <label style="flex-direction:row;align-items:center;gap:6px;margin:0">Size <input type="range" id="size" min="1" max="20" value="4"></label>
+    <button type="button" id="undo">Undo</button>
+    <button type="button" id="clear">Clear page</button>
+    <button type="button" id="full">Full screen</button>
+  </div>
+  <div class="toolbar" id="tabs"></div>
+  <canvas id="wb"></canvas>
+  <p class="muted" style="font-size:13px;margin-bottom:0">Pen pressure is supported (S Pen). Use pages for ideograms, sketches and different stages. Empty pages are not saved.</p>
+</div>
+
+<div class="panel">
+  <h2>Impressions</h2>
+  <textarea id="notes" placeholder="Sensory impressions, dimensions, feelings, concepts, anything. Mark analytical guesses as such."></textarea>
+  <h2 style="margin-top:18px">Confidence</h2>
+  <p class="muted" style="margin-top:0">How confident are you that this session matches the target? <b id="confv" class="big" style="color:var(--fg)">50</b> / 100</p>
+  <input type="range" class="wide" id="conf" min="0" max="100" value="50">
+  <p id="err" class="failed"></p>
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <button type="button" id="submit">Submit session</button>
+    <form action="/rv/trials/{{ t.id }}/abandon" method="post" onsubmit="return confirm('Abandon this trial? The target will be shown.')">
+      <button class="danger" type="submit">Abandon</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(() => {
+  const W = 1200, H = 900, TRIAL = "{{ t.id }}", CREATED = {{ created_ms }}, MAXP = 6;
+  const $ = id => document.getElementById(id);
+  const cv = $('wb'), ctx = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const COLORS = ['#111111', '#1d4ed8', '#dc2626', '#16a34a', '#ea580c', '#7c3aed', '#92400e'];
+  let pages = [[]], cur = 0, tool = 'pen', color = COLORS[0], size = 4, active = null, lastPen = 0, dirty = false;
+
+  const wOf = (s, q) => s.size * (s.tool === 'eraser' ? 4 : 1) * (0.35 + 0.9 * q);
+  function seg(c, s, i) {                       // draw the part of stroke s that ends at point i
+    const p = s.pts;
+    c.lineCap = c.lineJoin = 'round';
+    c.strokeStyle = c.fillStyle = s.tool === 'eraser' ? '#ffffff' : s.color;
+    if (p.length === 1) { c.beginPath(); c.arc(p[0][0], p[0][1], wOf(s, p[0][2]) / 2, 0, 6.2832); c.fill(); return; }
+    if (i < 1) return;
+    const a = p[i - 1], b = p[i];
+    const m0 = i > 1 ? [(p[i - 2][0] + a[0]) / 2, (p[i - 2][1] + a[1]) / 2] : a;
+    const m1 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    c.beginPath(); c.lineWidth = wOf(s, (a[2] + b[2]) / 2);
+    c.moveTo(m0[0], m0[1]); c.quadraticCurveTo(a[0], a[1], m1[0], m1[1]); c.stroke();
+  }
+  function tail(c, s) {                         // finish the last half-segment of a stroke
+    const p = s.pts, n = p.length; if (n < 2) return;
+    const a = p[n - 2], b = p[n - 1];
+    c.lineCap = 'round'; c.strokeStyle = s.tool === 'eraser' ? '#ffffff' : s.color; c.lineWidth = wOf(s, b[2]);
+    c.beginPath(); c.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2); c.lineTo(b[0], b[1]); c.stroke();
+  }
+  function paint(c, strokes) {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H);
+    for (const s of strokes) { for (let i = 0; i < s.pts.length; i++) seg(c, s, i); tail(c, s); }
+  }
+  const redraw = () => paint(ctx, pages[cur]);
+
+  // ---- input (mouse, touch, S Pen) ----
+  const pos = e => {
+    const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height,
+            (e.pointerType === 'pen' && e.pressure > 0) ? e.pressure : 0.5];
+  };
+  cv.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'pen') lastPen = performance.now();
+    else if (e.pointerType === 'touch' && performance.now() - lastPen < 1500) return;   // palm rejection
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault(); cv.setPointerCapture(e.pointerId);
+    active = { tool, color, size, pts: [pos(e)] };
+    pages[cur].push(active); seg(ctx, active, 0); dirty = true;
+  });
+  cv.addEventListener('pointermove', e => {
+    if (e.pointerType === 'pen') lastPen = performance.now();
+    if (!active) return;
+    e.preventDefault();
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const ev of (evs.length ? evs : [e])) { active.pts.push(pos(ev)); seg(ctx, active, active.pts.length - 1); }
+  });
+  const end = () => { if (!active) return; tail(ctx, active); active = null; saveDraft(); };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---- toolbar ----
+  const setTool = t => { tool = t; $('t-pen').classList.toggle('on', t === 'pen'); $('t-eraser').classList.toggle('on', t === 'eraser'); };
+  $('t-pen').onclick = () => setTool('pen'); $('t-eraser').onclick = () => setTool('eraser');
+  COLORS.forEach((c, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'sw' + (i === 0 ? ' on' : '');
+    b.style.background = c; b.setAttribute('aria-label', 'colour ' + c);
+    b.onclick = () => { color = c; setTool('pen'); document.querySelectorAll('.sw').forEach(x => x.classList.toggle('on', x === b)); };
+    $('swatches').appendChild(b);
+  });
+  $('size').oninput = e => { size = +e.target.value; };
+  $('undo').onclick = () => { pages[cur].pop(); redraw(); dirty = true; };
+  $('clear').onclick = () => { if (pages[cur].length && confirm('Clear this page?')) { pages[cur] = []; redraw(); dirty = true; } };
+  $('full').onclick = () => { const w = $('wbwrap'); document.fullscreenElement ? document.exitFullscreen() : (w.requestFullscreen && w.requestFullscreen()); };
+  function renderTabs() {
+    const el = $('tabs'); el.innerHTML = '';
+    pages.forEach((_, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Page ' + (i + 1);
+      if (i === cur) b.className = 'on';
+      b.onclick = () => { cur = i; redraw(); renderTabs(); }; el.appendChild(b);
+    });
+    if (pages.length < MAXP) {
+      const a = document.createElement('button'); a.type = 'button'; a.textContent = '+ New page';
+      a.onclick = () => { pages.push([]); cur = pages.length - 1; redraw(); renderTabs(); dirty = true; }; el.appendChild(a);
+    }
+  }
+
+  // ---- draft autosave (browser only) ----
+  const KEY = 'rvdraft-' + TRIAL;
+  function saveDraft() { try { localStorage.setItem(KEY, JSON.stringify({ pages, cur, notes: $('notes').value, conf: $('conf').value })); } catch (e) {} }
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (d && Array.isArray(d.pages) && d.pages.length) {
+      pages = d.pages; cur = Math.min(d.cur || 0, pages.length - 1);
+      $('notes').value = d.notes || ''; $('conf').value = d.conf != null ? d.conf : 50;
+    }
+  } catch (e) {}
+  $('confv').textContent = $('conf').value;
+  $('conf').addEventListener('input', () => { $('confv').textContent = $('conf').value; dirty = true; });
+  $('notes').addEventListener('input', () => { dirty = true; });
+  setInterval(() => { if (dirty) { saveDraft(); dirty = false; } }, 4000);
+  setInterval(() => {
+    const s = Math.max(0, Math.floor((Date.now() - CREATED) / 1000));
+    $('timer').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }, 1000);
+
+  // ---- submit ----
+  $('submit').addEventListener('click', async () => {
+    const btn = $('submit'); $('err').textContent = '';
+    const fd = new FormData(); fd.append('confidence', $('conf').value); fd.append('notes', $('notes').value);
+    let n = 0;
+    for (let i = 0; i < pages.length; i++) {
+      if (!pages[i].length) continue;
+      const c = document.createElement('canvas'); c.width = W; c.height = H; paint(c.getContext('2d'), pages[i]);
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      fd.append('pages', blob, 'page' + (++n) + '.png');
+    }
+    if (!n && !$('notes').value.trim()) { $('err').textContent = 'Draw something or add notes first.'; return; }
+    if (!confirm('Submit this session? It cannot be changed after the target is revealed.')) return;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    if (window.MuseCapture && MuseCapture.hasData()) {            // brainwave capture, if one was made
+      MuseCapture.mark('submitted'); MuseCapture.stop();
+      fd.append('eeg', new Blob([MuseCapture.csv()], { type: 'text/csv' }), 'capture.csv');
+    }
+    try {
+      const r = await fetch('/rv/trials/' + TRIAL + '/submit', { method: 'POST', body: fd });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.detail || r.statusText); }
+      const j = await r.json();
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      window.__rvSubmitted = true;
+      if (window.MuseCapture) { try { MuseCapture.disconnect(); } catch (e) {} }
+      location.href = j.next;
+    } catch (e) {
+      $('err').textContent = 'Could not save: ' + e.message;
+      btn.disabled = false; btn.textContent = 'Submit session';
+    }
+  });
+
+  renderTabs(); redraw();
+})();
+</script>
+
+<script src="/static/muse.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id), MC = window.MuseCapture;
+  const blocked = $('cap-blocked'), ui = $('cap-ui');
+  const sup = MC.supported();
+  if (!sup.ok) {
+    MC.report('bt_unavailable', sup.reason);
+    ui.hidden = true; blocked.hidden = false;
+    const p = document.createElement('p'); p.className = 'muted';
+    if (sup.reason === 'insecure') {
+      p.textContent = 'This browser only allows Bluetooth on secure (HTTPS) pages, and this page is ' + location.origin + '. The trial works fine without it. To enable capture on this phone:';
+      const ol = document.createElement('ol'); ol.className = 'muted';
+      ['Best: serve this app over HTTPS (a reverse proxy or ingress with a certificate).',
+       'Quick fix on this device only: open chrome://flags/#unsafely-treat-insecure-origin-as-secure in Chrome, enable it, add ' + location.origin + ' to the box, then relaunch Chrome.']
+        .forEach(t => { const li = document.createElement('li'); li.textContent = t; ol.appendChild(li); });
+      blocked.append(p, ol);
+    } else {
+      p.textContent = 'This browser does not support Web Bluetooth. Use Chrome on Android or desktop (not iOS or Firefox). The trial works fine without it, and you can attach a Muse Monitor export after the reveal.';
+      blocked.appendChild(p);
+    }
+    return;
+  }
+  const names = MC.BANDS.map(b => b.name), slot = [1, 2, 3, 4, 5];
+  const bars = $('cap-bars');
+  names.forEach((n, i) => {
+    const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:8px;margin:3px 0;font-size:13px';
+    const l = document.createElement('span'); l.textContent = n; l.style.width = '48px';
+    const track = document.createElement('div'); track.style.cssText = 'flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden';
+    const f = document.createElement('div'); f.id = 'cb' + i; f.style.cssText = 'height:100%;width:0;background:var(--s' + slot[i] + ')';
+    track.appendChild(f); r.append(l, track); bars.appendChild(r);
+  });
+  const qLabel = { good: 'good', fair: 'fair', noisy: 'noisy', flat: 'no signal', none: 'waiting' };
+  const qColor = { good: 'var(--ok)', fair: 'var(--warn)', noisy: 'var(--bad)', flat: 'var(--bad)', none: 'var(--mute)' };
+  const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+  function render(st) {
+    $('cap-connect').disabled = st.connected || st.reconnecting;
+    $('cap-connect').textContent = st.recording && !st.connected ? 'Reconnect Muse' : 'Connect Muse';
+    $('cap-start').disabled = !st.connected || st.recording;
+    $('cap-stop').disabled = !st.recording;
+    $('cap-live').hidden = !st.connected;
+    $('cap-marks').hidden = !st.recording;
+    $('cap-save').hidden = !MC.hasData();
+    const low = st.battery != null && st.battery < 20 ? ' (low: the headband may drop out)' : '';
+    $('cap-status').textContent = st.reconnecting ? 'Reconnecting\u2026 capture paused' + (st.recording ? ' (' + st.rows + ' samples kept)' : '')
+      : !st.connected ? (st.recording ? 'Disconnected, capture paused' : 'Not connected')
+      : (st.deviceName + (st.battery != null ? ' \u00B7 battery ' + st.battery + '%' + low : '') +
+         (st.recording ? ' \u00B7 recording ' + fmt(st.elapsed) + ' \u00B7 ' + st.rows + ' samples' : ' \u00B7 ready'));
+    const q = $('cap-q'); q.textContent = '';
+    MC.CH.forEach((c, i) => {
+      const s = document.createElement('span'), d = document.createElement('span');
+      d.style.cssText = 'display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;background:' + qColor[st.quality[i]];
+      s.append(d, document.createTextNode(c + ' ' + qLabel[st.quality[i]])); q.appendChild(s);
+    });
+    st.rel.forEach((v, i) => { $('cb' + i).style.width = Math.min(100, v * 100).toFixed(0) + '%'; });
+    $('cap-err').textContent = st.error && st.error !== 'insecure' && st.error !== 'unsupported' ? st.error : '';
+  }
+  MC.onChange(render); render(MC.state);
+
+  $('cap-connect').addEventListener('click', () => { MC.connect().catch(() => {}); });
+  $('cap-start').addEventListener('click', () => MC.start());
+  $('cap-stop').addEventListener('click', () => { MC.mark('capture stopped'); MC.stop(); });
+  $('cap-marks').addEventListener('click', e => { const m = e.target.dataset && e.target.dataset.m; if (m) MC.mark(m); });
+  $('cap-save').addEventListener('click', () => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([MC.csv()], { type: 'text/csv' }));
+    a.download = 'muse_trial_{{ t.coordinate }}.csv'; document.body.appendChild(a); a.click(); a.remove();
+  });
+  let first = true;   // the first pen stroke while recording marks the start of sketching
+  $('wb').addEventListener('pointerdown', () => { if (first && MC.state.recording) { first = false; MC.mark('first stroke'); } });
+  window.addEventListener('beforeunload', e => { if (MC.state.recording && !window.__rvSubmitted) { e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+
+{# ------------------------------------------------------------------ judging #}
+{% elif t.status == 'judging' %}
+<div class="panel">
+  <h2>Your session</h2>
+  <div class="sketches">{% for i in pages %}<img src="/rv/trials/{{ t.id }}/sketch/{{ i }}" alt="Sketch page {{ i }}">{% endfor %}</div>
+  {% if t.notes %}<pre>{{ t.notes }}</pre>{% endif %}
+  <p class="muted">Confidence {{ t.confidence }}/100 &middot; {{ ((t.duration_s or 0) / 60)|round(1) }} min</p>
+</div>
+<div class="panel">
+  <h2>Judging</h2>
+  <p>One of these {{ {2:'two',3:'three',4:'four'}[n_options] }} images is your target. Judging only from what you drew and wrote, which one fits best? Chance is 1 in {{ n_options }}.</p>
+  <form action="/rv/trials/{{ t.id }}/judge" method="post">
+    <div class="grid4">
+      {% for k in option_keys %}
+      <label class="opt"><input type="radio" name="choice" value="{{ k }}" required>
+        <img src="/rv/trials/{{ t.id }}/img/{{ k }}" alt="Option {{ 'ABCD'[loop.index0] }}"><span class="letter">{{ 'ABCD'[loop.index0] }}</span></label>
+      {% endfor %}
+    </div>
+    <button type="submit">Lock in my choice and reveal</button>
+  </form>
+  <form action="/rv/trials/{{ t.id }}/abandon" method="post" style="margin-top:12px" onsubmit="return confirm('Abandon this trial? The target will be shown.')">
+    <button class="danger" type="submit">Abandon</button>
+  </form>
+</div>
+
+{# ------------------------------------------------------------------ reveal / complete / abandoned #}
+{% else %}
+<div class="panel">
+  <div class="cols">
+    <div>
+      <h2>Target</h2>
+      <img class="pic" src="/rv/trials/{{ t.id }}/img/target" alt="Target">
+      <p class="muted" style="font-size:13px">
+        <b style="color:var(--fg)">{{ reveal.title }}</b> &middot; {{ reveal.category }}<br>
+        {% if reveal.description %}{{ reveal.description }}<br>{% endif %}
+        {% if reveal.creator %}Photo: {{ reveal.creator }} &middot; {% endif %}{{ reveal.license }}
+        {% if reveal.page_url and reveal.page_url.startswith('http') %} &middot; <a href="{{ reveal.page_url }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}
+        {% if reveal.lat is not none and reveal.lon is not none %}<br>Location: {{ reveal.lat }}, {{ reveal.lon }}{% endif %}
+      </p>
+    </div>
+    <div>
+      <h2>Your session</h2>
+      {% if pages %}<div class="sketches">{% for i in pages %}<a href="/rv/trials/{{ t.id }}/sketch/{{ i }}" target="_blank"><img src="/rv/trials/{{ t.id }}/sketch/{{ i }}" alt="Sketch page {{ i }}"></a>{% endfor %}</div>
+      {% else %}<p class="muted">No sketch saved.</p>{% endif %}
+      {% if t.notes %}<pre>{{ t.notes }}</pre>{% endif %}
+      {% if t.confidence is not none %}<p class="muted">Confidence {{ t.confidence }}/100 &middot; {{ ((t.duration_s or 0) / 60)|round(1) }} min</p>{% endif %}
+      {% if t.status == 'abandoned' %}<p class="muted">This trial was abandoned.</p>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="panel eegc" id="eegpanel" data-url="/api/rv/trials/{{ t.id }}/eeg">
+  <h2>Brainwaves</h2>
+  <div id="eegbody"><p class="muted">Loading&hellip;</p></div>
+  <div id="eegkey" hidden>{% include "_eeg_key.html" %}</div>
+</div>
+<template id="attach-tpl">
+  <form action="/rv/trials/{{ t.id }}/eeg/upload" method="post" enctype="multipart/form-data" style="margin-top:12px">
+    <label style="display:block;margin:0 0 6px">Attach a Muse Monitor / Mind Monitor export recorded during this session (.csv or .xlsx)
+      <input type="file" name="file" accept=".csv,.xlsx,.xlsm" required style="display:block;margin-top:6px"></label>
+    <button type="submit">Attach and analyze</button>
+  </form>
+</template>
+<script src="/static/eegchart.js"></script>
+<script>
+(function () {
+  const body = document.getElementById('eegbody'), url = document.getElementById('eegpanel').dataset.url;
+  const AI_ON = {{ 'true' if ai_enabled else 'false' }};
+  let timer = null;
+  const attach = () => document.getElementById('attach-tpl').content.cloneNode(true);
+  const p = (cls, text) => { const n = document.createElement('p'); if (cls) n.className = cls; n.textContent = text; return n; };
+
+  async function load() {
+    clearTimeout(timer);
+    let j;
+    try { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); j = await r.json(); }
+    catch (e) { body.replaceChildren(p('failed', 'Could not load brainwave results: ' + e.message)); return; }
+    if (!j.present) {
+      body.replaceChildren(p('muted', 'No brainwave recording for this trial. Next time, connect your Muse in the capture box before you start, or attach an export from Muse Monitor now.'), attach());
+      return;
+    }
+    const st = j.status || {};
+    if (st.status === 'pending') { body.replaceChildren(p('muted', 'Analyzing your recording\u2026')); timer = setTimeout(load, 2500); return; }
+    if (st.status === 'failed') { body.replaceChildren(p('failed', 'The recording could not be analyzed: ' + (st.error || 'unknown error')), attach()); return; }
+    const chartHost = document.createElement('div');
+    const kids = [chartHost];
+    const files = document.createElement('p'); files.className = 'muted'; files.style.fontSize = '13px';
+    files.append('Files: ');
+    (j.files || []).forEach((f, i) => { const a = document.createElement('a'); a.href = '/rv/trials/{{ t.id }}/eeg/' + f; a.textContent = f.replace('eeg_source', 'recording'); files.append(i ? ' \u00B7 ' : '', a); });
+    kids.push(files);
+    if (AI_ON && j.ai && j.ai.status) {
+      const box = document.createElement('div'); box.style.marginTop = '14px';
+      const h = document.createElement('h3'); h.textContent = 'AI coach'; h.style.fontSize = '15px'; box.appendChild(h);
+      const s = j.ai.status.status;
+      if (s === 'pending') { box.appendChild(p('muted', 'Writing feedback\u2026')); timer = setTimeout(load, 4000); }
+      else if (s === 'failed') box.appendChild(p('failed', 'AI feedback failed: ' + (j.ai.status.error || 'unknown error')));
+      else { const d = document.createElement('div'); d.className = 'ai'; d.innerHTML = j.ai.html; box.appendChild(d); }   // server-escaped markdown
+      kids.push(box);
+    }
+    if (AI_ON) {
+      const f = document.createElement('form'); f.method = 'post'; f.action = '/rv/trials/{{ t.id }}/eeg/ai'; f.className = 'row'; f.style.marginTop = '10px';
+      const inp = document.createElement('input'); inp.name = 'focus'; inp.placeholder = 'Optional: ask it to focus on something'; inp.style.flex = '1';
+      const b = document.createElement('button'); b.type = 'submit'; b.textContent = j.ai && j.ai.status ? 'Regenerate AI feedback' : 'Get AI feedback';
+      f.append(inp, b); kids.push(f);
+    }
+    const rep = document.createElement('details'); rep.style.marginTop = '12px';
+    const sm = document.createElement('summary'); sm.textContent = 'Replace the recording'; rep.append(sm, attach()); kids.push(rep);
+    body.replaceChildren(...kids);
+    EEGChart.mount(chartHost, j.series);
+    document.getElementById('eegkey').hidden = false;
+  }
+  load();
+})();
+</script>
+
+{% if t.judging_enabled and t.judged_choice %}
+<div class="panel">
+  <h2>Judging: <span class="{{ 'done' if t.judged_correct else 'failed' }}">{{ 'hit' if t.judged_correct else 'miss' }}</span></h2>
+  <div class="grid4">
+    {% for o in t.options %}
+    <div class="opt{{ ' target' if o.is_target }}{{ ' picked' if o.key == t.judged_choice }}">
+      <img src="/rv/trials/{{ t.id }}/img/{{ o.key }}" alt=""><span class="letter">{{ 'ABCD'[loop.index0] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted" style="font-size:13px;margin:0">Green outline: the real target. Blue outline: your pick.</p>
+</div>
+{% endif %}
+
+{% if t.status in ('revealed', 'complete') %}
+<div class="panel">
+  <h2>{{ 'Update your score' if t.status == 'complete' else 'Score this session' }}</h2>
+  <form action="/rv/trials/{{ t.id }}/score" method="post">
+    <p class="muted" style="margin-top:0">How well did your session match the target? <b class="big" id="accv" style="color:var(--fg)">{{ t.accuracy if t.accuracy is not none else 50 }}</b> / 100
+       <br>0 = nothing matched, 100 = essentially the target. Count only what you wrote or drew <i>before</i> the reveal.</p>
+    <input type="range" class="wide" name="accuracy" min="0" max="100" value="{{ t.accuracy if t.accuracy is not none else 50 }}" oninput="document.getElementById('accv').textContent=this.value">
+    <label style="width:100%;margin:12px 0 0">What did you get right, what was noise, and what would you do differently?
+      <textarea name="feedback_notes" style="margin-top:6px">{{ t.feedback_notes }}</textarea></label>
+    <p><button type="submit">{{ 'Update score' if t.status == 'complete' else 'Save score' }}</button></p>
+  </form>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

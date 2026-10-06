@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8
+# only for tests/browser_smoke.py (needs a Chromium: `playwright install chromium`)
+playwright>=1.45

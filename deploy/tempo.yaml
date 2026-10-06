@@ -1,0 +1,17 @@
+# Single-binary Tempo for the optional "observability" profile: receives OTLP, keeps traces on a local volume.
+server:
+  http_listen_port: 3200
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http: {endpoint: "0.0.0.0:4318"}
+        grpc: {endpoint: "0.0.0.0:4317"}
+compactor:
+  compaction:
+    block_retention: 72h
+storage:
+  trace:
+    backend: local
+    wal: {path: /var/tempo/wal}
+    local: {path: /var/tempo/blocks}

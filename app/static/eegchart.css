@@ -1,0 +1,58 @@
+/* Brainwave graph. Colours follow the validated categorical order (blue, orange, aqua, yellow, magenta)
+   and the blue/red diverging pair, with their own light and dark steps. */
+.eegc { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4;
+        --pos:#2a78d6; --neg:#e34948; --ink:#1b2430; --ink2:#5d6b7d; --grid:#e3e8ee; --surf:#ffffff;
+        --phase-a:rgba(37,99,235,.045); --phase-b:rgba(37,99,235,.0);
+        position:relative; color:var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .eegc { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181;
+          --pos:#3987e5; --neg:#e66767; --ink:#e6ebf2; --ink2:#8b97a8; --grid:#2a3340; --surf:#171d25;
+          --phase-a:rgba(106,169,255,.07); --phase-b:rgba(106,169,255,0); }
+}
+.eegc svg { display:block; width:100%; height:auto; touch-action:pan-y; user-select:none; -webkit-user-select:none; }
+.eegc svg:focus-visible { outline:2px solid var(--s1); outline-offset:2px; border-radius:4px; }
+.eegc text { fill:var(--ink2); font:12px system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+.eegc text.ttl { fill:var(--ink); font-weight:600; font-size:13px; }
+.eegc text.hint { font-size:11px; }
+.eegc .grid { stroke:var(--grid); stroke-width:1; }
+.eegc .zero { stroke:var(--ink2); stroke-width:1; stroke-dasharray:4 3; }
+.eegc .mark { stroke:var(--ink2); stroke-width:1; stroke-dasharray:1 3; }
+.eegc .line { fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.eegc .meter-line { fill:none; stroke:var(--ink); stroke-width:2; stroke-linejoin:round; }
+.eegc .win circle { fill:var(--surf); stroke:var(--ink); stroke-width:2; }
+.eegc .win text { fill:var(--ink); font-weight:700; font-size:11px; text-anchor:middle; }
+.eegc .cross { stroke:var(--ink); stroke-width:1; }
+.eegc .dotring { stroke:var(--surf); stroke-width:2; }
+.eegc-chips { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px; }
+.eegc-chip { display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border:1px solid var(--grid); border-radius:99px;
+             background:transparent; color:var(--ink); font:13px system-ui,sans-serif; cursor:pointer; min-height:34px; }
+.eegc-chip .sw { width:18px; height:0; border-top:3px solid currentColor; }
+.eegc-chip small { color:var(--ink2); }
+.eegc-chip[aria-pressed="false"] { opacity:.5; text-decoration:line-through; }
+.eegc-chip:hover { border-color:var(--ink2); }
+.eegc-tip { position:absolute; z-index:5; pointer-events:none; background:var(--surf); color:var(--ink); border:1px solid var(--grid);
+            border-radius:8px; padding:8px 10px; font:12.5px/1.45 system-ui,sans-serif; box-shadow:0 4px 14px rgba(0,0,0,.18);
+            min-width:190px; max-width:260px; display:none; }
+.eegc-tip .h { color:var(--ink2); margin-bottom:4px; }
+.eegc-tip .r { display:flex; align-items:baseline; gap:7px; margin:2px 0; }
+.eegc-tip .k { flex:0 0 14px; height:0; border-top:3px solid; align-self:center; }
+.eegc-tip b { color:var(--ink); font-variant-numeric:tabular-nums; }
+.eegc-tip .n { color:var(--ink2); }
+.eegc-note { color:var(--ink2); font-size:13px; margin:8px 0 0; }
+.eegc-flags { margin:10px 0 0; padding-left:20px; color:#a56a00; font-size:13px; }
+@media (prefers-color-scheme: dark) { .eegc-flags { color:#e0b050; } }
+.eegc-tools { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
+.eegc-tbl { margin-top:10px; overflow-x:auto; }
+.eegc-tbl table { font-size:13px; }
+.eegc-tbl td, .eegc-tbl th { white-space:nowrap; }
+.eegk { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; margin-top:6px; }
+.eegk .card { border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13.5px; }
+.eegk .card h4 { margin:0 0 3px; font-size:14px; display:flex; align-items:center; gap:8px; }
+.eegk .card h4 .sw { width:18px; border-top:3px solid; display:inline-block; }
+.eegk .card p { margin:3px 0; color:var(--mute); }
+.eegk .card p b { color:var(--fg); font-weight:600; }
+.eegkey dl { margin:0; }
+.eegkey .terms { display:grid; grid-template-columns:minmax(120px,190px) 1fr; gap:0; font-size:13.5px; }
+.eegkey .terms dt { font-weight:600; padding:7px 10px 7px 0; border-top:1px solid var(--line); }
+.eegkey .terms dd { margin:0; padding:7px 0; border-top:1px solid var(--line); color:var(--mute); }
+@media (max-width:640px) { .eegkey .terms { grid-template-columns:1fr; } .eegkey .terms dt { padding-bottom:0; border-bottom:0; } .eegkey .terms dd { border-top:0; padding-top:2px; } }

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.testdata
+tests/sample
+# local runtime data and secrets: never commit these
+data/
+.env
+*.db
+*.tgz
+*.tar

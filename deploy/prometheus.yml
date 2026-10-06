@@ -1,0 +1,10 @@
+# Used by the optional "observability" profile in docker-compose.yml.
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: rv-analyzer
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["rv-analyzer:8000"]
+    # If you set RV_AUTH_PROTECT_METRICS=true, add:
+    # basic_auth: {username: <RV_AUTH_USER>, password: <RV_AUTH_PASSWORD>}

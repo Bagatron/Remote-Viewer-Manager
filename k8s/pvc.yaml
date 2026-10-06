@@ -1,0 +1,12 @@
+# Holds everything the app stores: uploaded originals, graphs, CSV outputs and
+# the SQLite database (rv.db). Size it for your session volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rv-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # storageClassName: longhorn   # uncomment / set to your cluster's class
+  resources:
+    requests:
+      storage: 10Gi

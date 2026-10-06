@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}RV targets - RV Analyzer{% endblock %}
+{% block content %}
+<div class="panel">
+  <h1>Remote viewing targets</h1>
+  <p class="muted">You are given a coordinate, not the target. Sketch and write what you perceive, rate your confidence, and only then is the target revealed. Everything is saved.</p>
+  {% if error %}<p class="failed"><b>Couldn't prepare a target:</b> {{ error }}</p>{% endif %}
+  {% if open_trial %}
+  <p>You have an unfinished trial: <a href="/rv/trials/{{ open_trial.id }}"><b>{{ open_trial.coordinate }}</b></a> ({{ open_trial.status }}).</p>
+  {% endif %}
+  <form action="/rv/start" method="post" class="row" style="align-items:center"
+        onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='Preparing target…'">
+    <label style="flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--fg);margin-right:18px">
+      <input type="checkbox" name="judging" value="1"> Tournament judging: after your session, pick the match from {{ n_opts }} images
+    </label>
+    <button type="submit">Start new target</button>
+  </form>
+</div>
+
+{% if stats.n_revealed %}
+<div class="panel">
+  <h2>Results so far</h2>
+  <div class="stats">
+    <div class="stat"><b>{{ stats.n_complete }}</b><span>Scored sessions</span></div>
+    <div class="stat"><b>{{ stats.mean_confidence if stats.mean_confidence is not none else '-' }}</b><span>Mean confidence</span></div>
+    <div class="stat"><b>{{ stats.mean_accuracy if stats.mean_accuracy is not none else '-' }}</b><span>Mean self-scored accuracy</span></div>
+    <div class="stat"><b>{{ stats.conf_acc_corr if stats.conf_acc_corr is not none else '-' }}</b><span>Confidence vs accuracy (r)</span></div>
+    {% if stats.judged_n %}
+    <div class="stat"><b>{{ stats.judged_hits }}/{{ stats.judged_n }}</b><span>Judging hits (chance {{ stats.judged_chance_label }}), p={{ stats.judged_p }}</span></div>
+    {% endif %}
+  </div>
+  <p class="muted" style="font-size:13px;margin-bottom:0">Small samples are noisy. Accuracy is self-scored, so it is subjective; the judging hit rate (with its exact p-value against chance) is the more objective measure. Expect scattered results until you have dozens of trials.</p>
+  {% if stats.by_category %}
+  <details style="margin-top:10px"><summary class="muted">By target category</summary>
+    <table><tr><th>Category</th><th>Scored</th><th>Mean accuracy</th></tr>
+    {% for c in stats.by_category %}<tr><td>{{ c.category }}</td><td>{{ c.n }}</td><td>{{ c.mean_accuracy }}</td></tr>{% endfor %}</table>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Trials</h2>
+  {% if rows %}
+  <table>
+    <tr><th></th><th>Date</th><th>Coordinate</th><th>Status</th><th>Confidence</th><th>Accuracy</th><th>Judged</th><th>Category</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td style="width:64px">{% if r.thumb %}<img src="/rv/trials/{{ r.id }}/img/target" alt="" style="width:56px;height:42px;object-fit:cover;border-radius:4px">{% endif %}</td>
+      <td>{{ r.date }}</td>
+      <td><a href="/rv/trials/{{ r.id }}">{{ r.coordinate }}</a></td>
+      <td><span class="badge {{ 'done' if r.status == 'complete' else ('muted' if r.status == 'abandoned' else 'pending') }}">{{ r.status }}</span></td>
+      <td>{{ r.confidence if r.confidence is not none else '-' }}</td>
+      <td>{{ r.accuracy if r.accuracy is not none else '-' }}</td>
+      <td>{% if r.judged_correct is none %}-{% elif r.judged_correct %}<span class="done">hit</span>{% else %}<span class="failed">miss</span>{% endif %}</td>
+      <td>{{ r.category or '-' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No trials yet. Start one above.</p>
+  {% endif %}
+</div>
+{% endblock %}

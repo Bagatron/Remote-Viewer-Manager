@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RV Analyzer{% endblock %}</title>
+  <link rel="stylesheet" href="/static/eegchart.css">
+  {% block head %}{% endblock %}
+  <style>
+    :root { --bg:#0f1318; --panel:#171d25; --line:#2a3340; --fg:#e6ebf2; --mute:#8b97a8; --acc:#6aa9ff; --ok:#4cc38a; --bad:#ef6a6a; --warn:#e0b050; }
+    @media (prefers-color-scheme: light) {
+      :root { --bg:#f5f7fa; --panel:#fff; --line:#d9e0e8; --fg:#1b2430; --mute:#5d6b7d; --acc:#2563eb; --ok:#14804a; --bad:#c0392b; --warn:#a56a00; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    header { border-bottom:1px solid var(--line); padding:14px 24px; display:flex; gap:16px; align-items:baseline; }
+    header a { color:var(--fg); text-decoration:none; font-weight:600; font-size:18px; }
+    header nav { display:flex; gap:16px; } header a.nl { font-size:14px; font-weight:500; color:var(--mute); }
+    header a.nl:hover { color:var(--fg); }
+    .badge.muted { color:var(--mute); }
+    main { max-width:1100px; margin:0 auto; padding:24px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:20px; }
+    h1,h2 { margin:0 0 12px; font-weight:600; } h2 { font-size:17px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); font-size:14px; }
+    th { color:var(--mute); font-weight:500; }
+    a { color:var(--acc); }
+    label { display:inline-flex; flex-direction:column; gap:4px; font-size:12px; color:var(--mute); margin-right:14px; }
+    input[type=number],textarea { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
+    input[type=number] { width:90px; }
+    textarea { width:100%; min-height:90px; }
+    button { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:8px 16px; font:inherit; cursor:pointer; }
+    button.danger { background:transparent; color:var(--bad); border:1px solid var(--bad); }
+    .row { display:flex; flex-wrap:wrap; align-items:flex-end; gap:6px; }
+    .badge { padding:2px 8px; border-radius:99px; font-size:12px; border:1px solid currentColor; }
+    .done { color:var(--ok); } .failed { color:var(--bad); } .pending { color:var(--warn); }
+    img.plot { max-width:100%; border-radius:6px; border:1px solid var(--line); background:#fff; }
+    pre { white-space:pre-wrap; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:12px; font-size:13px; }
+    .muted { color:var(--mute); }
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+    .stat b { display:block; font-size:20px; } .stat span { color:var(--mute); font-size:12px; }
+    .flags { margin:12px 0 0; padding-left:20px; color:var(--warn); font-size:13px; }
+    .ai h3, .ai h4, .ai h5 { margin:16px 0 6px; font-size:15px; }
+    .ai p { margin:6px 0; } .ai ul { margin:6px 0; padding-left:22px; } .ai li { margin:4px 0; }
+    footer { max-width:1100px; margin:0 auto; padding:8px 24px 28px; color:var(--mute); font-size:12px; display:flex; flex-wrap:wrap; gap:6px 14px; }
+    footer a { color:var(--mute); }
+    code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:13px; }
+  </style>
+</head>
+<body>
+<header><a href="/">RV Analyzer</a><nav><a href="/" class="nl">EEG sessions</a><a href="/rv" class="nl">RV targets</a><a href="/guide" class="nl">Guide</a><a href="/settings" class="nl">Settings</a></nav></header>
+<main>{% block content %}{% endblock %}</main>
+<footer><span>RV Analyzer v{{ app_version }}</span><a href="/settings">Settings</a><a href="/guide">Guide</a><a href="/metrics">Metrics</a><a href="/api/status">Status</a></footer>
+</body>
+</html>

@@ -1,0 +1,99 @@
+# One-command install:   docker compose up -d        (then open http://localhost:8000)
+# Nothing else is required. Optional extras (each is a profile; none is started by default):
+#   docker compose --profile ai up -d              a local Ollama AI coach (then see "AI coach" in the README)
+#   docker compose --profile observability up -d   Prometheus + Grafana + Tempo, preconfigured
+#   docker compose --profile ai --profile observability up -d     both
+# The AI server, image key and tracing endpoint can all be set later on the app's Settings page.
+services:
+  rv-analyzer:
+    image: ghcr.io/bagatron/rv-analyzer:latest
+    # To build from this checkout instead:  docker compose up -d --build
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${RV_PORT:-8000}:8000"
+    volumes:
+      - rv-data:/data            # sessions, sketches, trials and the database live here
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach Ollama on this machine
+    environment:
+      # Lets the Settings page save changes. Fine on your own machine; if the app is reachable by others,
+      # set RV_AUTH_USER / RV_AUTH_PASSWORD (which also enables editing) and set this to false.
+      RV_SETTINGS_EDITABLE: ${RV_SETTINGS_EDITABLE:-true}
+      RV_AUTH_USER: ${RV_AUTH_USER:-}
+      RV_AUTH_PASSWORD: ${RV_AUTH_PASSWORD:-}
+      RV_AI_BACKEND: ${RV_AI_BACKEND:-openwebui}
+      RV_AI_BASE_URL: ${RV_AI_BASE_URL:-}
+      RV_AI_MODEL: ${RV_AI_MODEL:-}
+      RV_AI_API_KEY: ${RV_AI_API_KEY:-}
+      RV_PEXELS_API_KEY: ${RV_PEXELS_API_KEY:-}
+      RV_CONTACT: ${RV_CONTACT:-}
+      RV_LOG_LEVEL: ${RV_LOG_LEVEL:-INFO}
+      RV_LOG_FORMAT: ${RV_LOG_FORMAT:-auto}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-}
+
+
+  # ---- optional: local AI coach (docker compose --profile ai up -d) ------------------------------
+  # Then, on the app's Settings page: AI server URL http://ollama:11434, server type ollama,
+  # model = RV_OLLAMA_MODEL (default llama3.2:3b). CPU only works but is slow; see README for GPU notes.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    depends_on:
+      ollama: {condition: service_healthy}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${RV_OLLAMA_MODEL:-llama3.2:3b}"]
+    restart: "no"
+
+  # ---- optional: metrics, dashboards and traces (docker compose --profile observability up -d) ---
+  # Grafana http://localhost:3000 (admin / admin on first login), dashboard "RV Analyzer" is preloaded.
+  # For traces, set OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 in .env (or on the Settings page + restart).
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+  tempo:
+    image: grafana/tempo:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    user: root                    # the named volume is created root-owned
+    volumes:
+      - ./deploy/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on: [prometheus, tempo]
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+
+volumes:
+  rv-data:
+  ollama-data:
+  prometheus-data:
+  tempo-data:
+  grafana-data:

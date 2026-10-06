@@ -1,0 +1,81 @@
+# Alerts for RV Analyzer. Requires the Prometheus Operator CRDs:
+#   kubectl apply -n rv-analyzer -f k8s/optional/prometheusrule.yaml
+# Same "release:" label note as servicemonitor.yaml. The job label below assumes the ServiceMonitor's default
+# (the Service name, "rv-analyzer"); change it if yours differs.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rv-analyzer
+  labels:
+    app: rv-analyzer
+    # release: kube-prometheus-stack
+spec:
+  groups:
+    - name: rv-analyzer.availability
+      rules:
+        - alert: RVAnalyzerDown
+          expr: up{job="rv-analyzer"} == 0 or absent(up{job="rv-analyzer"})
+          for: 3m
+          labels: {severity: critical}
+          annotations:
+            summary: RV Analyzer is not being scraped or is down
+            description: Prometheus cannot scrape /metrics. Check `kubectl -n rv-analyzer get pods` and the pod logs.
+        - alert: RVRequiredComponentDown
+          expr: rv_component_up{component=~"database|data_volume|workers"} == 0
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: "RV Analyzer cannot use its {{ $labels.component }}"
+            description: "Details: curl http://<node>:30946/api/status (the 'detail' field says why)."
+        - alert: RVProbesStale
+          expr: time() - max(rv_component_last_check_timestamp_seconds{component="database"}) > 300
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: RV Analyzer's background health checks stopped running
+            description: The component metrics are frozen, so rv_component_up cannot be trusted. Restart the pod.
+    - name: rv-analyzer.dependencies
+      rules:
+        - alert: RVAICoachDown
+          expr: rv_component_up{component=~"ai_backend|ai_model"} == 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "AI coach dependency down: {{ $labels.component }}"
+            description: ai_backend means Open WebUI/Ollama is unreachable or the key is wrong; ai_model means the configured model is not on it. Sessions still analyze; only the written feedback is affected.
+        - alert: RVImageProviderDown
+          expr: rv_component_up{component="image_provider"} == 0
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: New RV targets cannot be created
+            description: The image provider (Wikimedia Commons / Pexels) is unreachable or returns nothing usable. Existing trials are unaffected.
+    - name: rv-analyzer.capacity
+      rules:
+        - alert: RVDataVolumeLow
+          expr: rv_data_volume_free_bytes / rv_data_volume_total_bytes < 0.15
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: RV Analyzer data volume is below 15% free
+            description: Sessions, sketches and recordings live there. Expand the volume or delete old trials.
+        - alert: RVWorkerBacklog
+          expr: max_over_time(rv_worker_queue_depth[15m]) > 5 and min_over_time(rv_worker_queue_depth[15m]) > 0
+          labels: {severity: info}
+          annotations:
+            summary: Analysis or AI jobs are queueing for 15 minutes
+    - name: rv-analyzer.errors
+      rules:
+        - alert: RVServerErrors
+          expr: sum(rate(rv_http_requests_total{status=~"5.."}[10m])) > 0.05
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: RV Analyzer is returning 5xx errors
+            description: Look at the logs with {logger="rv.http", level="ERROR"} style filters, or search by request_id.
+        - alert: RVAnalysisFailures
+          expr: increase(rv_analyses_total{status="failed"}[1h]) > 0
+          labels: {severity: info}
+          annotations:
+            summary: An EEG analysis failed in the last hour
+            description: Usually a bad or empty upload; the error is shown on the session page and in the logs.

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Settings - RV Analyzer{% endblock %}
+{% block head %}
+<style>
+  .set .grid { display:grid; grid-template-columns:minmax(150px,230px) 1fr; gap:0; }
+  .set .k { padding:10px 12px 10px 0; border-top:1px solid var(--line); font-weight:600; }
+  .set .v { padding:8px 0; border-top:1px solid var(--line); }
+  .set .v input[type=text], .set .v input[type=password], .set .v select, .set .v input[type=number] {
+    width:100%; max-width:460px; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:7px 9px; font:inherit; }
+  .set .v input[type=number] { width:90px; }
+  .set .h { color:var(--mute); font-size:12.5px; margin-top:3px; }
+  .set .src { font-size:11.5px; color:var(--mute); margin-left:8px; }
+  .set .pill { font-size:11px; padding:1px 7px; border-radius:99px; border:1px solid currentColor; margin-left:6px; }
+  .set .notice { border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:10px 12px; margin-bottom:16px; font-size:14px; }
+  .set .okmsg { color:var(--ok); } .set .errmsg { color:var(--bad); }
+  .set .comp { display:grid; grid-template-columns:18px 160px 1fr; gap:6px 8px; padding:6px 0; border-top:1px solid var(--line); font-size:14px; align-items:baseline; }
+  .set .dot { width:10px; height:10px; border-radius:50%; display:inline-block; background:var(--ok); }
+  .set .dot.down { background:var(--bad); }
+  .set .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px; }
+  .set button.sec { background:transparent; color:var(--acc); border:1px solid var(--acc); }
+  .set button[disabled] { opacity:.5; cursor:not-allowed; }
+  @media (max-width:700px) { .set .grid { grid-template-columns:1fr; } .set .k { border-bottom:0; padding-bottom:0; } .set .v { border-top:0; } .set .comp { grid-template-columns:18px 1fr; } .set .comp span:last-child { grid-column:2; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="set">
+<div class="panel">
+  <h1>Settings</h1>
+  <p class="muted">Everything here is optional. With nothing set, the app runs without the AI coach and tracing, and uses Wikimedia for target images.
+  A value saved here overrides the matching environment variable; clearing it goes back to the environment or default.</p>
+  <p class="muted">Version <b>{{ app_version }}</b> &middot; Prometheus: point a scrape job at <code>/metrics</code> on this address (nothing to configure in the app).</p>
+  {% if not view.editable %}
+  <div class="notice">Settings are read-only. To allow editing, set <code>RV_AUTH_USER</code> and <code>RV_AUTH_PASSWORD</code> (recommended), or <code>RV_SETTINGS_EDITABLE=true</code> if this app is only reachable by you.</div>
+  {% elif not auth_on %}
+  <div class="notice">No login is set, so anyone who can open this page can change these settings, including the address the server sends requests to. Fine on your own machine; set <code>RV_AUTH_USER</code> and <code>RV_AUTH_PASSWORD</code> if others can reach it.</div>
+  {% endif %}
+  <div id="restart" class="notice" {% if not view.restart_pending %}hidden{% endif %}>Restart the app for these to take effect: <span id="restart-list">{{ view.restart_pending|join(', ') }}</span>.</div>
+</div>
+
+<div class="panel">
+  <h2>Component status</h2>
+  <p class="muted">{{ 'Ready' if ready else 'NOT ready' }}. The same checks feed <code>rv_component_up</code> in Prometheus.</p>
+  {% for c in components %}
+  <div class="comp"><span><i class="dot {{ '' if c.up else 'down' }}"></i></span><span><b>{{ c.name }}</b></span>
+    <span>{{ 'up' if c.up else 'DOWN' }}{% if c.note %} <span class="muted">({{ c.note }})</span>{% endif %}{% if c.detail %} <span class="muted">{{ c.detail }}</span>{% endif %}</span></div>
+  {% endfor %}
+  {% if not ai_on %}<div class="comp"><span><i class="dot" style="background:var(--mute)"></i></span><span><b>ai</b></span><span class="muted">not configured (optional)</span></div>{% endif %}
+  {% if not tracing_on %}<div class="comp"><span><i class="dot" style="background:var(--mute)"></i></span><span><b>tracing</b></span><span class="muted">off (optional)</span></div>{% else %}<div class="comp"><span><i class="dot"></i></span><span><b>tracing</b></span><span>exporting traces</span></div>{% endif %}
+</div>
+
+<form id="f" class="panel" onsubmit="return false">
+{% for g in view.groups %}
+  <h2 style="margin-top:{{ '0' if loop.first else '20px' }}">{{ g.title }}</h2>
+  <div class="grid">
+  {% for f in g.fields %}
+    <div class="k"><label for="s_{{ f.key }}" style="display:block;margin:0;font-size:inherit;color:inherit">{{ f.label }}</label>
+      <span class="src">{{ f.source }}</span>{% if f.restart %}<span class="pill muted">needs restart</span>{% endif %}</div>
+    <div class="v">
+      {% if f.kind == 'choice' %}
+        <select id="s_{{ f.key }}" data-key="{{ f.key }}" {{ '' if view.editable else 'disabled' }}>
+          {% for c in f.choices %}<option value="{{ c }}" {{ 'selected' if f.value == c }}>{{ c }}</option>{% endfor %}
+        </select>
+      {% elif f.kind == 'bool' %}
+        <select id="s_{{ f.key }}" data-key="{{ f.key }}" {{ '' if view.editable else 'disabled' }}>
+          <option value="true" {{ 'selected' if f.value }}>yes</option><option value="false" {{ 'selected' if not f.value }}>no</option>
+        </select>
+      {% elif f.kind == 'int' %}
+        <input type="number" id="s_{{ f.key }}" data-key="{{ f.key }}" min="{{ f.lo }}" max="{{ f.hi }}" value="{{ f.value }}" {{ '' if view.editable else 'disabled' }}>
+      {% elif f.secret %}
+        <input type="password" id="s_{{ f.key }}" data-key="{{ f.key }}" autocomplete="off" placeholder="{{ 'set (leave blank to keep)' if f.is_set else 'not set' }}" {{ '' if view.editable else 'disabled' }}>
+        {% if f.is_set and f.source == 'settings' and view.editable %}<label style="display:inline-flex;flex-direction:row;gap:6px;margin:6px 0 0"><input type="checkbox" data-clear="{{ f.key }}"> remove the saved key</label>{% endif %}
+      {% else %}
+        <input type="text" id="s_{{ f.key }}" data-key="{{ f.key }}" value="{{ f.value }}" autocomplete="off" spellcheck="false" {{ '' if view.editable else 'disabled' }}>
+      {% endif %}
+      <div class="h">{{ f.help }}</div>
+    </div>
+  {% endfor %}
+  </div>
+  {% if g.key == 'ai' %}<div class="actions"><button type="button" class="sec" data-test="ai">Test AI connection</button><span id="t-ai" class="muted"></span></div>{% endif %}
+  {% if g.key == 'images' %}<div class="actions"><button type="button" class="sec" data-test="images">Test image source</button><span id="t-images" class="muted"></span></div>{% endif %}
+{% endfor %}
+  <div class="actions" style="margin-top:22px">
+    <button type="button" id="save" {{ '' if view.editable else 'disabled' }}>Save settings</button>
+    <span id="msg" role="status" class="muted"></span>
+  </div>
+  <p class="muted" style="font-size:12px;margin-top:12px">Saved to <code>{{ view.file }}</code> on the data volume. API keys are stored there as plain text, readable by anyone with access to that volume.</p>
+</form>
+</div>
+<script>
+(function () {
+  var msg = document.getElementById('msg');
+  function post(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+      .then(function (r) { return r.json().then(function (j) { return {status: r.status, body: j}; }); });
+  }
+  function say(el, text, cls) { el.textContent = text; el.className = cls || 'muted'; }
+  document.getElementById('save').addEventListener('click', function () {
+    var values = {}, clear = [];
+    document.querySelectorAll('[data-key]').forEach(function (el) { values[el.dataset.key] = el.value; });
+    document.querySelectorAll('[data-clear]').forEach(function (el) { if (el.checked) clear.push(el.dataset.clear); });
+    say(msg, 'Saving...');
+    post('/api/settings', {values: values, clear: clear}).then(function (r) {
+      if (r.status !== 200) { say(msg, (r.body.errors || ['Could not save.']).join(' '), 'errmsg'); return; }
+      var n = r.body.changed.length;
+      say(msg, n ? 'Saved (' + n + ' changed). Reloading...' : 'Nothing changed.', 'okmsg');
+      if (n) setTimeout(function () { location.reload(); }, 900);
+    }).catch(function () { say(msg, 'Could not reach the server.', 'errmsg'); });
+  });
+  document.querySelectorAll('[data-test]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var what = b.dataset.test, out = document.getElementById('t-' + what);
+      say(out, 'Testing... (save first to test new values)');
+      b.disabled = true;
+      post('/api/settings/test', {what: what}).then(function (r) {
+        var j = r.body;
+        if (j.ok) say(out, what === 'ai' ? 'Connected, model found.' : 'Image download works (' + j.provider + ').', 'okmsg');
+        else say(out, (j.enabled === false ? 'AI coach is not configured. ' : '') + (j.error || 'Failed.'), 'errmsg');
+      }).catch(function () { say(out, 'Could not reach the server.', 'errmsg'); }).then(function () { b.disabled = false; });
+    });
+  });
+})();
+</script>
+{% endblock %}

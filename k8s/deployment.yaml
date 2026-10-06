@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rv-analyzer
+  labels: {app: rv-analyzer}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # RWO volume + SQLite: never two pods at once
+  selector:
+    matchLabels: {app: rv-analyzer}
+  template:
+    metadata:
+      labels: {app: rv-analyzer}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: rv-analyzer:latest   # overridden by kustomization.yaml `images:`
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8000}
+          envFrom:
+            - configMapRef: {name: rv-config}
+          env:
+            - name: RV_AI_API_KEY          # Open WebUI API key; the Secret is optional
+              valueFrom:
+                secretKeyRef: {name: rv-ai, key: api-key, optional: true}
+            - name: RV_AUTH_USER           # optional login: create Secret "rv-auth" (see README)
+              valueFrom:
+                secretKeyRef: {name: rv-auth, key: user, optional: true}
+            - name: RV_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: rv-auth, key: password, optional: true}
+            - name: RV_PEXELS_API_KEY      # optional: real stock photos instead of Wikimedia Commons
+              valueFrom:
+                secretKeyRef: {name: rv-pexels, key: api-key, optional: true}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 2Gi}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 3
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: rv-data}
+        - name: tmp
+          emptyDir: {}

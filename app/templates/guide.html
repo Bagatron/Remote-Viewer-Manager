@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Guide - RV Analyzer{% endblock %}
+{% block head %}
+<style>
+  .guide h2 { margin:0 0 6px; font-size:18px; }
+  .guide h3 { margin:18px 0 6px; font-size:15px; }
+  .guide dl { margin:8px 0 0; display:grid; grid-template-columns:minmax(150px,230px) 1fr; gap:0; }
+  .guide dt { font-weight:600; padding:9px 12px 9px 0; border-top:1px solid var(--line); }
+  .guide dd { margin:0; padding:9px 0; border-top:1px solid var(--line); color:var(--fg); }
+  .guide dd .muted { display:block; margin-top:2px; font-size:13px; }
+  .guide ol, .guide ul { margin:6px 0; padding-left:22px; } .guide li { margin:5px 0; }
+  .guide .toc { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:14px; }
+  .guide .good { color:var(--ok); } .guide .caution { color:var(--warn); }
+  .guide .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .guide .swatch { display:inline-block; width:26px; height:0; border-top:3px solid currentColor; vertical-align:middle; margin-right:6px; }
+  .guide .swatch.dash { border-top-style:dashed; } .guide .swatch.dot { border-top-style:dotted; }
+  @media (max-width:700px) { .guide dl { grid-template-columns:1fr; } .guide dt { padding-bottom:0; border-bottom:0; } .guide dd { border-top:0; padding-top:2px; } .guide .two { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="guide">
+
+<div class="panel">
+  <h1>Guide and legend</h1>
+  <p class="muted">What the terms on these pages mean, how the pieces fit together, and what good results would (and would not) look like.</p>
+  <div class="toc">
+    <a href="#goal">What we are going for</a><a href="#loop">The practice loop</a>
+    <a href="#rv">RV terms</a><a href="#eeg">EEG terms</a><a href="#graph">Reading the graph</a>
+    <a href="#status">Badges</a><a href="#numbers">Reading the numbers</a>
+  </div>
+</div>
+
+<div class="panel" id="goal">
+  <h2>What we are going for</h2>
+  <p>Two separate things, deliberately kept apart:</p>
+  <ol>
+    <li><b>A repeatable practice.</b> Do blind remote-viewing sessions in a consistent way, record what you
+      sketched and how sure you were, and keep every session so you can look back. The headband adds a record of your
+      physiological state: were you calm and inwardly focused, or tense and distracted?</li>
+    <li><b>Honest measurement.</b> Find out, over many trials, whether your impressions match targets better than
+      chance, and whether your confidence tells you anything. The app is built so the result cannot be flattered:
+      the target stays hidden until you submit, and the judging mode compares you to a fixed chance level ({{ chance_pct }}% with {{ n_word }} options).</li>
+  </ol>
+  <h3>What a good outcome looks like</h3>
+  <ul>
+    <li><b class="good">A consistent starting state:</b> a similar calm, low-beta state at the start of each session, and fewer
+      artifacts in the quality notes. Whether that state helps your results is something the trial statistics can show over time; the
+      EEG alone cannot.</li>
+    <li><b class="good">Calibration:</b> your confidence rises when you are more accurate (a positive confidence/accuracy
+      correlation) and falls when you are not.</li>
+    <li><b class="good">Beating chance, if it is real:</b> a judging hit rate clearly above chance ({{ chance_pct }}% with {{ n_word }} options) over dozens of trials,
+      with a small p-value. A handful of trials cannot show this either way.</li>
+  </ul>
+  <h3>What it can not do</h3>
+  <ul class="caution">
+    <li>EEG band power cannot tell you whether a viewing was correct. A high "RV index" is a brain state, not a hit.</li>
+    <li>The "intuitive windows" are simply the highest points of a smoothed line. Some highest points always exist,
+      even in random noise.</li>
+    <li>Self-scored accuracy is subjective. Prefer the judging hit rate when you want an objective number.</li>
+  </ul>
+</div>
+
+<div class="panel" id="loop">
+  <h2>The practice loop</h2>
+  <ol>
+    <li><b>Record</b> with your headband (Muse Monitor, Mind Monitor, or the experimental recorder in <code>tools/</code>).
+      Press the app's marker button at moments that matter, such as "start viewing" and "sketching".</li>
+    <li><b>Run a trial</b> under <a href="/rv">RV targets</a>: get a coordinate, sketch and write impressions, rate
+      confidence, submit. Do this while the headband is recording.</li>
+    <li><b>Reveal and score.</b> See the target next to your sketches, then score the match 0 to 100 and note what you
+      got right, what was noise, and what you would do differently.</li>
+    <li><b>Upload the recording</b> on the <a href="/">EEG sessions</a> page. You get the graph, the quality notes and written
+      feedback from your AI coach.</li>
+    <li><b>Review over time.</b> Trends across sessions, your trial statistics, and your own notes are where patterns
+      appear. Single sessions are noisy.</li>
+  </ol>
+</div>
+
+<div class="panel" id="rv">
+  <h2>RV terms (the Targets pages)</h2>
+  <dl>
+    <dt>Coordinate</dt><dd>A random tag such as <code>4829-1736</code>. It carries no information about the target; it is
+      just a label you focus on, as in classic controlled remote-viewing protocols.</dd>
+    <dt>Target</dt><dd>The photo you are trying to describe. It is chosen when the trial starts but is never sent to your
+      browser before you submit.</dd>
+    <dt>Blind</dt><dd>You cannot see the target, its title, or its source until you submit. The server enforces it, and a
+      stored fingerprint (SHA-256) shows the target was fixed before you began.</dd>
+    <dt>Impressions</dt><dd>Your written notes: shapes, colours, textures, temperatures, motion, feelings. Sketch first, then label.</dd>
+    <dt>Sketch pages</dt><dd>Up to six whiteboard pages per trial, each saved as a picture.</dd>
+    <dt>Confidence</dt><dd>0 to 100, entered <b>before</b> the reveal: how sure you are that your session captured the target.</dd>
+    <dt>Self-scored accuracy</dt><dd>0 to 100, entered <b>after</b> the reveal: how well your session matched. 0 means nothing matched, 100 means essentially the target.
+      <span class="muted">Count only what you wrote or drew before the reveal.</span></dd>
+    <dt>Tournament judging</dt><dd>Optional. After you submit, you pick which of {{ n_word }} images matches your session best (the target plus {{ 'one decoy' if n_opts == 2 else (n_opts - 1)|string + ' decoys' }}
+      from {{ 'a different category' if n_opts == 2 else 'different categories' }}) before the reveal.</dd>
+    <dt>Decoy</dt><dd>A wrong option in judging mode, from a different category than the target.</dd>
+    <dt>Hit rate</dt><dd>The share of judged trials where you picked the real target. Chance is <b>{{ chance_pct }}%</b> with {{ n_word }} options.</dd>
+    <dt>p-value</dt><dd>The probability of getting at least this many hits by pure luck (an exact test against chance, {{ chance_pct }}% per trial with {{ n_word }} options; trials judged with a different number of options are each compared with their own chance level). Small
+      (conventionally under 0.05) means unlikely to be luck. With few trials it will be large even if you are doing well.</dd>
+    <dt>Confidence vs accuracy (r)</dt><dd>Correlation, from -1 to +1, between your confidence and your self-scored accuracy. Near 0 means your confidence does not
+      predict your results; positive means it does.</dd>
+    <dt>Category</dt><dd>The theme of the target (water, tower, desert, ice and so on). The hub breaks results down by category to show where you do better.</dd>
+    <dt>Source and licence</dt><dd>Shown at the reveal: who took the photo, where it came from (Wikimedia Commons or Pexels), and its licence.</dd>
+  </dl>
+</div>
+
+<div class="panel" id="capture">
+  <h2>Brainwave capture during a trial</h2>
+  <p>On the trial page you can connect your Muse over Bluetooth, record while you view and sketch, and see the graph right after the reveal.</p>
+  <dl>
+    <dt>Capture</dt><dd>The app listens to the headband in your browser (Web Bluetooth, Chrome on Android or desktop). It needs a secure page: HTTPS, or <code>localhost</code>. It is optional; the trial works without it.</dd>
+    <dt>Contact dots</dt><dd>One per sensor: <b>good</b> is a clean signal, <b>fair</b> is usable, <b>noisy</b> means a loose fit or muscle tension, <b>no signal</b> means the sensor is not touching skin. Fix these before you start.</dd>
+    <dt>Live bars</dt><dd>A rough picture of the five bands right now. They are for checking the headband works, not for judging your session.</dd>
+    <dt>Markers</dt><dd>Tags on the timeline: <i>capture started</i>, <i>first stroke</i> and <i>submitted</i> are added for you; <i>Begin viewing</i>, <i>Impression</i> and <i>Sketching</i> are buttons you press. They split the graph into phases you can compare.</dd>
+    <dt>Blind protocol</dt><dd>The recording is stored with the trial but its graph and AI feedback stay locked until the reveal, so nothing about the target can leak into the analysis.</dd>
+    <dt>Scale</dt><dd>Values are log<sub>10</sub> of power in &micro;V&sup2;, close to but not guaranteed identical to Muse Monitor. Compare sessions recorded the same way, not across the two sources.</dd>
+  </dl>
+  <p class="muted">The graph's own key (every line and word on it) sits right under the graph on the Sessions and trial pages.</p>
+</div>
+
+<div class="panel" id="eeg">
+  <h2>EEG terms (the Sessions pages)</h2>
+  <dl>
+    <dt>Muse sensors</dt><dd><b>AF7 and AF8</b> sit on the forehead; <b>TP9 and TP10</b> sit behind the ears. The app averages all four.
+      <span class="muted">Forehead sensors also pick up eye blinks and frowning.</span></dd>
+    <dt>Delta</dt><dd>Roughly 1 to 4 Hz. Deep sleep; in a waking recording, often eye movement and blinks.</dd>
+    <dt>Theta</dt><dd>Roughly 4 to 8 Hz. Drowsy, dreamy, inward-focused states. The main band for this app.</dd>
+    <dt>Alpha</dt><dd>Roughly 8 to 13 Hz. Relaxed wakefulness, typically strongest with eyes closed.</dd>
+    <dt>Beta</dt><dd>Roughly 13 to 30 Hz. Active thinking and alertness; also tension and muscle activity.</dd>
+    <dt>Gamma</dt><dd>Roughly 30 to 44 Hz. Fast activity; with a dry headband it is often muscle noise.</dd>
+    <dt>Band power</dt><dd>How strong each band is over time. Muse Monitor exports it on a logarithmic scale, so differences between bands are ratios and values can be negative. Only compare against your own baseline.</dd>
+    <dt>Smoothing window</dt><dd>A moving average over this many consecutive data points, to calm the jitter. Larger is smoother but blurs short events. Default 7.
+      <span class="muted">Counted in data points, not seconds; Muse exports have several points per second.</span></dd>
+    <dt>RV index</dt><dd>Smoothed <b>theta minus beta</b>. Higher means more theta relative to beta: a relaxed, inward-focused state.
+      Compare <i>this</i> number between sessions.</dd>
+    <dt>RV index (z)</dt><dd>The RV index re-scaled within one session (mean 0, spread 1), so the graph can show it next to the bands.
+      <span class="muted">Its average is zero by construction, so never compare it between sessions.</span></dd>
+    <dt>Intuitive window</dt><dd>One of the highest peaks of the z-scored RV index. <b>Top windows</b> sets how many to mark; <b>Min gap</b> keeps them at least that many seconds apart.
+      They are moments of interest to review, not detections.</dd>
+    <dt>Marker</dt><dd>A button press during recording (shown as a dotted vertical line). Use it to label the phases of a session.</dd>
+    <dt>Feedback score</dt><dd>When an Excel file includes a Feedback sheet, these are your scores for moments or intervals. With at least 10 scored points the app looks for the RV-index level that best separates your good moments from the rest.</dd>
+    <dt>Threshold (Youden J)</dt><dd>That best-separating level. J runs from 0 (no better than guessing) to 1 (perfect separation). Treat it as exploratory with small samples.</dd>
+    <dt>Quality notes</dt><dd>Warnings the app raises before interpretation: a short recording, the headband off, poor sensor contact, lots of blinks or jaw clenches, data gaps.</dd>
+    <dt>Blinks / jaw clenches</dt><dd>Counts from the headband's own detection. Many of them mean frontal theta and high-frequency beta or gamma may be artifacts, not brain activity.</dd>
+    <dt>Horseshoe (HSI)</dt><dd>Sensor contact quality, per sensor: 1 is good, 4 is bad.</dd>
+    <dt>AI coach</dt><dd>A language model on your own machine that reads a compact numeric summary of the session, your earlier sessions and your notes, and writes feedback.
+      It never sees the raw EEG and is instructed not to claim the data proves anything. <span class="muted">The exact text it was given is saved with each session (ai_prompt.txt).</span></dd>
+  </dl>
+</div>
+
+<div class="panel" id="graph">
+  <h2>Reading the session graph</h2>
+  <dl>
+    <dt><span class="swatch"></span>Alpha, Theta, Beta</dt><dd>The smoothed band powers (solid lines, labelled in the legend under the graph).</dd>
+    <dt><span class="swatch dash"></span>RV index (z)</dt><dd>The dashed line: theta minus beta, re-scaled. Peaks mean more theta relative to beta.</dd>
+    <dt>Dots labelled "Window N"</dt><dd>The intuitive windows, numbered from highest, with their clock time.</dd>
+    <dt><span class="swatch dot"></span>Dotted vertical lines</dt><dd>Your markers, with their labels.</dd>
+    <dt>RV index vs feedback plot</dt><dd>Appears when feedback scores exist: each dot is a scored moment, and the dashed line is the best-separating threshold.</dd>
+    <dt>Trend graph</dt><dd>The mean raw theta-minus-beta per session, so you can see whether your typical state is shifting over weeks.</dd>
+  </dl>
+</div>
+
+<div class="panel" id="status">
+  <h2>Badges</h2>
+  <div class="two">
+    <dl>
+      <dt><span class="badge pending">pending</span></dt><dd>Analysis or AI feedback is still running.</dd>
+      <dt><span class="badge done">done</span></dt><dd>Finished.</dd>
+      <dt><span class="badge failed">failed</span></dt><dd>Something went wrong; the page shows what, and re-analyze or regenerate retries it.</dd>
+    </dl>
+    <dl>
+      <dt>assigned</dt><dd>A trial is open and the target is hidden. Sketch and submit.</dd>
+      <dt>judging</dt><dd>Submitted; pick one of the images to lock in your choice.</dd>
+      <dt>revealed</dt><dd>The target is visible; score it.</dd>
+      <dt>complete</dt><dd>Scored and saved.</dd>
+      <dt>abandoned</dt><dd>You gave up on the trial; the target may be revealed.</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="panel" id="numbers">
+  <h2>Reading the numbers</h2>
+  <table>
+    <tr><th>Number</th><th>It can tell you</th><th>It can not tell you</th></tr>
+    <tr><td>RV index (raw)</td><td>How relaxed and inward-focused you were, compared with your other sessions</td><td>Whether your impressions were right</td></tr>
+    <tr><td>Intuitive windows</td><td>Where to look back in the recording</td><td>That something happened there</td></tr>
+    <tr><td>Self-scored accuracy</td><td>How you felt the match went</td><td>Anything objective; it is open to hindsight bias</td></tr>
+    <tr><td>Judging hit rate and p-value</td><td>Whether you beat chance across the trials you did</td><td>Anything useful from fewer than about 20 judged trials</td></tr>
+    <tr><td>Confidence vs accuracy (r)</td><td>Whether your gut sense of certainty is informative</td><td>Cause; a few trials give a wildly unstable value</td></tr>
+  </table>
+  <p class="muted" style="margin-top:12px">Rules of thumb: aim for dozens of trials before drawing conclusions, decide in advance how many you will run, and
+    count every trial, including the ones you would rather forget.</p>
+</div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1419">
+<title>Muse Recorder</title>
+<style>
+  :root{--bg:#0f1419;--card:#18202a;--line:#27323f;--fg:#e6edf3;--mut:#8b98a5;--acc:#4cc9f0;--ok:#3ddc84;--warn:#ffb703;--bad:#ef476f;
+    --c0:#4cc9f0;--c1:#b388ff;--c2:#3ddc84;--c3:#ffb703;--c4:#ef476f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Roboto,sans-serif;padding:12px 16px calc(24px + env(safe-area-inset-bottom))}
+  h1{font-size:18px;margin:4px 0 12px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:11px 16px;background:var(--acc);color:#04202a;cursor:pointer}
+  button.sec{background:#26313e;color:var(--fg)}
+  button.rec{background:var(--bad);color:#fff}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  select{font:inherit;background:#26313e;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px}
+  label{color:var(--mut);font-size:13px}
+  .mut{color:var(--mut);font-size:13px}
+  canvas{width:100%;display:block;border-radius:8px;background:#0b1015}
+  .stat{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--mut)}
+  .stat b{color:var(--fg);font-weight:600}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#444;margin-right:4px;vertical-align:middle}
+  .bars{display:grid;gap:8px;margin-top:6px}
+  .bar{display:grid;grid-template-columns:62px 1fr 48px;align-items:center;gap:8px;font-size:13px}
+  .bar .track{height:14px;background:#0b1015;border-radius:7px;overflow:hidden}
+  .bar .fill{height:100%;width:0;border-radius:7px;transition:width .25s}
+  #msg{min-height:20px;color:var(--warn);font-size:13px;margin-top:8px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}
+  .legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle}
+</style>
+</head>
+<body>
+<h1>Muse Recorder</h1>
+
+<div class="card">
+  <div class="row">
+    <button id="btnConnect">Connect Muse</button>
+    <button id="btnDisc" class="sec" disabled>Disconnect</button>
+    <button id="btnRec" class="sec" disabled>● Record</button>
+  </div>
+  <div class="stat">
+    <span id="stDevice">Not connected</span>
+    <span>Battery: <b id="stBat">–</b></span>
+    <span>Rate: <b id="stRate">–</b></span>
+    <span id="stRec"></span>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <b>Live EEG</b>
+    <span class="row">
+      <label>Scale <select id="selScale"><option value="50">±50 µV</option><option value="100" selected>±100 µV</option><option value="250">±250 µV</option><option value="500">±500 µV</option></select></label>
+      <label>Window <select id="selWin"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></label>
+    </span>
+  </div>
+  <canvas id="cvEEG" height="260"></canvas>
+  <div class="stat" id="quality"></div>
+  <div class="mut" style="margin-top:6px">Display is high-pass filtered for readability. Recorded CSV contains raw samples.</div>
+</div>
+
+<div class="card">
+  <b>Brainwave bands</b> <span class="mut">(average of 4 sensors, relative power)</span>
+  <div class="bars" id="bars"></div>
+  <canvas id="cvHist" height="150" style="margin-top:10px"></canvas>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div class="card mut">
+  Works with Muse 2, Muse S (original) and Muse 2016. Requires Chrome on Android with Bluetooth and Location on.
+  Recording saves two CSV files: raw EEG (256 Hz) and band powers (1 Hz).
+</div>
+
+<script>
+'use strict';
+// ---------- Muse protocol constants ----------
+const MUSE_SERVICE = 0xfe8d;
+const CHAR_CONTROL = '273e0001-4c4d-454d-96be-f03bac821358';
+const CHAR_TELEMETRY = '273e000b-4c4d-454d-96be-f03bac821358';
+const EEG_CHARS = [
+  '273e0003-4c4d-454d-96be-f03bac821358', // TP9
+  '273e0004-4c4d-454d-96be-f03bac821358', // AF7
+  '273e0005-4c4d-454d-96be-f03bac821358', // AF8
+  '273e0006-4c4d-454d-96be-f03bac821358'  // TP10
+];
+const CH_NAMES = ['TP9','AF7','AF8','TP10'];
+const FS = 256;
+const BANDS = [
+  {name:'Delta', lo:1,  hi:4,  col:'--c0'},
+  {name:'Theta', lo:4,  hi:8,  col:'--c1'},
+  {name:'Alpha', lo:8,  hi:13, col:'--c2'},
+  {name:'Beta',  lo:13, hi:30, col:'--c3'},
+  {name:'Gamma', lo:30, hi:44, col:'--c4'}
+];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---------- Decoding ----------
+function encodeCommand(cmd){
+  const b = new TextEncoder().encode(cmd);
+  const out = new Uint8Array(b.length + 2);
+  out[0] = b.length + 1; out.set(b, 1); out[out.length-1] = 0x0a;
+  return out;
+}
+function decodeEEG(dv){
+  const seq = dv.getUint16(0);
+  const s = new Array(12);
+  for(let i=0;i<12;i++){
+    const b = 2 + ((i*12) >> 3);
+    const v = (i % 2 === 0) ? ((dv.getUint8(b) << 4) | (dv.getUint8(b+1) >> 4))
+                            : (((dv.getUint8(b) & 0x0f) << 8) | dv.getUint8(b+1));
+    s[i] = (v - 2048) * 0.48828125; // µV
+  }
+  return {seq, samples: s};
+}
+
+// ---------- FFT / band power ----------
+const N = 512;
+const hann = new Float32Array(N).map((_, i) => 0.5 - 0.5*Math.cos(2*Math.PI*i/(N-1)));
+function fftMag2(re){ // in-place radix-2 on re, returns power spectrum (N/2+1)
+  const n = re.length, im = new Float32Array(n);
+  for(let i=1,j=0;i<n;i++){
+    let bit = n >> 1;
+    for(; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if(i < j){ const t=re[i]; re[i]=re[j]; re[j]=t; }
+  }
+  for(let len=2; len<=n; len<<=1){
+    const ang = -2*Math.PI/len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let cr=1, ci=0;
+      for(let k=0;k<len/2;k++){
+        const a=i+k, b=i+k+len/2;
+        const xr = re[b]*cr - im[b]*ci, xi = re[b]*ci + im[b]*cr;
+        re[b] = re[a]-xr; im[b] = im[a]-xi; re[a] += xr; im[a] += xi;
+        const ncr = cr*wr - ci*wi; ci = cr*wi + ci*wr; cr = ncr;
+      }
+    }
+  }
+  const p = new Float32Array(n/2+1);
+  for(let i=0;i<=n/2;i++) p[i] = re[i]*re[i] + im[i]*im[i];
+  return p;
+}
+function bandPowers(window512){ // returns absolute powers per band
+  let mean = 0; for(let i=0;i<N;i++) mean += window512[i]; mean /= N;
+  const x = new Float32Array(N);
+  for(let i=0;i<N;i++) x[i] = (window512[i]-mean) * hann[i];
+  const p = fftMag2(x), res = FS/N;
+  return BANDS.map(b => {
+    let s = 0;
+    for(let k=Math.ceil(b.lo/res); k<=Math.floor(b.hi/res); k++) s += p[k];
+    return s;
+  });
+}
+
+// ---------- State ----------
+const RING = FS * 30;
+const ring = CH_NAMES.map(() => new Float32Array(RING));
+let wpos = CH_NAMES.map(() => 0);        // total samples written per channel
+let hp = CH_NAMES.map(() => ({px:0, py:0, init:false}));
+let lastSeq = CH_NAMES.map(() => null), seqBase = CH_NAMES.map(() => 0);
+let device = null, server = null, ctrl = null, connected = false;
+let pktCount = 0, rateT0 = performance.now(), rate = 0;
+let recording = false, recStart = 0, recPackets = CH_NAMES.map(() => new Map()), recT0 = null, recIdx0 = null;
+let bandRows = [], bandHist = [], lastBand = null;
+const lastPktT = [0,0,0,0];
+
+const $ = id => document.getElementById(id);
+const msg = t => { $('msg').textContent = t || ''; };
+
+// ---------- Packet handling ----------
+function onEEG(ch, ev){
+  const dv = ev.target.value;
+  if(dv.byteLength < 20) return;
+  const {seq, samples} = decodeEEG(dv);
+  if(lastSeq[ch] !== null && seq < lastSeq[ch] - 30000) seqBase[ch] += 65536;
+  lastSeq[ch] = seq;
+  const idx = seqBase[ch] + seq;
+  pktCount++;
+  lastPktT[ch] = performance.now();
+  const st = hp[ch];
+  for(const x of samples){
+    if(!st.init){ st.px = x; st.py = 0; st.init = true; }
+    const y = 0.995 * (st.py + x - st.px);
+    st.px = x; st.py = y;
+    ring[ch][wpos[ch] % RING] = y; wpos[ch]++;
+  }
+  if(recording){
+    if(recT0 === null){ recT0 = Date.now(); recIdx0 = idx; }
+    recPackets[ch].set(idx, Float32Array.from(samples));
+  }
+}
+function onTelemetry(ev){
+  const dv = ev.target.value;
+  if(dv.byteLength >= 4){
+    const bat = dv.getUint16(2) / 512;
+    $('stBat').textContent = bat.toFixed(0) + '%';
+  }
+}
+
+// ---------- Connection ----------
+async function connect(){
+  if(!navigator.bluetooth){ msg('Web Bluetooth not available. Use Chrome on Android over HTTPS.'); return; }
+  msg('');
+  try{
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{namePrefix: 'Muse'}],
+      optionalServices: [MUSE_SERVICE]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    $('stDevice').textContent = 'Connecting to ' + device.name + '…';
+    server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(MUSE_SERVICE);
+    ctrl = await svc.getCharacteristic(CHAR_CONTROL);
+    try{ await ctrl.startNotifications(); }catch(e){}
+    try{
+      const tel = await svc.getCharacteristic(CHAR_TELEMETRY);
+      tel.addEventListener('characteristicvaluechanged', onTelemetry);
+      await tel.startNotifications();
+    }catch(e){}
+    for(let i=0;i<4;i++){
+      const c = await svc.getCharacteristic(EEG_CHARS[i]);
+      c.addEventListener('characteristicvaluechanged', ev => onEEG(i, ev));
+      await c.startNotifications();
+    }
+    const send = async cmd => {
+      const data = encodeCommand(cmd);
+      if(ctrl.writeValueWithoutResponse) await ctrl.writeValueWithoutResponse(data);
+      else await ctrl.writeValue(data);
+      await new Promise(r => setTimeout(r, 60));
+    };
+    await send('h'); await send('p21'); await send('s'); await send('d');
+    connected = true;
+    $('stDevice').textContent = 'Connected: ' + device.name;
+    $('btnConnect').disabled = true; $('btnDisc').disabled = false; $('btnRec').disabled = false;
+    requestWake();
+  }catch(e){
+    msg('Connection failed: ' + (e && e.message ? e.message : e));
+    $('stDevice').textContent = 'Not connected';
+    try{ if(device && device.gatt.connected) device.gatt.disconnect(); }catch(_){}
+  }
+}
+function onDisconnected(){
+  connected = false;
+  $('stDevice').textContent = 'Disconnected';
+  $('btnConnect').disabled = false; $('btnDisc').disabled = true; $('btnRec').disabled = true;
+  $('stBat').textContent = '–';
+  if(recording){ msg('Muse disconnected. Recording stopped, saving what was captured.'); stopRecording(); }
+  releaseWake();
+}
+async function disconnect(){
+  if(recording) stopRecording();
+  try{ if(ctrl) await ctrl.writeValue(encodeCommand('h')); }catch(e){}
+  if(device && device.gatt.connected) device.gatt.disconnect();
+}
+
+// keep screen on while connected
+let wake = null;
+async function requestWake(){ try{ if('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); }catch(e){} }
+function releaseWake(){ try{ if(wake){ wake.release(); wake = null; } }catch(e){} }
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && connected) requestWake(); });
+
+// ---------- Recording ----------
+function startRecording(){
+  recPackets = CH_NAMES.map(() => new Map()); recT0 = null; recIdx0 = null;
+  bandRows = []; recStart = Date.now(); recording = true;
+  $('btnRec').textContent = '■ Stop & Save'; $('btnRec').className = 'rec';
+}
+function stopRecording(){
+  recording = false;
+  $('btnRec').textContent = '● Record'; $('btnRec').className = 'sec';
+  $('stRec').textContent = '';
+  saveCSVs();
+}
+function download(name, text){
+  const blob = new Blob([text], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+function stamp(){ const d = new Date(recStart); const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+function saveCSVs(){
+  if(recT0 === null){ msg('No data was captured.'); return; }
+  let minI = Infinity, maxI = -Infinity;
+  for(const m of recPackets) for(const k of m.keys()){ if(k < minI) minI = k; if(k > maxI) maxI = k; }
+  const lines = ['timestamp_unix,elapsed_s,TP9,AF7,AF8,TP10'];
+  for(let idx = minI; idx <= maxI; idx++){
+    const pk = recPackets.map(m => m.get(idx));
+    if(!pk.some(Boolean)) continue;
+    for(let i=0;i<12;i++){
+      const el = ((idx - recIdx0) * 12 + i) / FS;
+      const row = [(recT0/1000 + el).toFixed(4), el.toFixed(4)];
+      for(let c=0;c<4;c++) row.push(pk[c] ? pk[c][i].toFixed(2) : '');
+      lines.push(row.join(','));
+    }
+  }
+  download(`muse_eeg_${stamp()}.csv`, lines.join('\n'));
+  const bl = ['timestamp_unix,elapsed_s,delta_rel,theta_rel,alpha_rel,beta_rel,gamma_rel,delta_abs,theta_abs,alpha_abs,beta_abs,gamma_abs'];
+  for(const r of bandRows) bl.push(r.join(','));
+  setTimeout(() => download(`muse_bands_${stamp()}.csv`, bl.join('\n')), 600);
+  msg('Saved ' + (lines.length-1) + ' samples. If Chrome asks, allow multiple downloads.');
+}
+
+// ---------- Analysis (1 Hz band powers + 4 Hz display) ----------
+function analyze(){
+  if(Math.min(...wpos) < N) return null;
+  const acc = new Array(BANDS.length).fill(0);
+  for(let c=0;c<4;c++){
+    const w = new Float32Array(N), end = wpos[c];
+    for(let i=0;i<N;i++) w[i] = ring[c][(end - N + i) % RING];
+    const bp = bandPowers(w);
+    for(let b=0;b<acc.length;b++) acc[b] += bp[b] / 4;
+  }
+  const tot = acc.reduce((a,b)=>a+b, 0) || 1;
+  return {abs: acc, rel: acc.map(v => v/tot)};
+}
+function updateBands(){
+  const r = analyze(); if(!r) return;
+  lastBand = r;
+  BANDS.forEach((b,i) => {
+    $('fill'+i).style.width = (r.rel[i]*100).toFixed(1) + '%';
+    $('val'+i).textContent = (r.rel[i]*100).toFixed(0) + '%';
+  });
+  bandHist.push(r.rel); if(bandHist.length > 120) bandHist.shift();
+}
+function logBandRow(){
+  if(!recording || !lastBand || recT0 === null) return;
+  const el = (Date.now() - recT0)/1000;
+  bandRows.push([ (Date.now()/1000).toFixed(3), el.toFixed(2),
+    ...lastBand.rel.map(v => v.toFixed(5)), ...lastBand.abs.map(v => v.toExponential(4)) ]);
+}
+
+function updateQuality(){
+  const q = $('quality'); let html = '';
+  for(let c=0;c<4;c++){
+    let cls = '#444', txt = '–';
+    if(wpos[c] >= FS){
+      let s=0, s2=0; for(let i=0;i<FS;i++){ const v = ring[c][(wpos[c]-1-i) % RING]; s+=v; s2+=v*v; }
+      const rms = Math.sqrt(Math.max(0, s2/FS - (s/FS)**2));
+      if(connected && performance.now() - lastPktT[c] > 2000){ cls = '#444'; txt = 'no data'; }
+      else if(rms < 1){ cls = css('--bad'); txt = 'flat'; }
+      else if(rms > 150){ cls = css('--bad'); txt = 'noisy'; }
+      else if(rms > 60){ cls = css('--warn'); txt = 'fair'; }
+      else { cls = css('--ok'); txt = 'good'; }
+    }
+    html += `<span><span class="dot" style="background:${cls}"></span>${CH_NAMES[c]} <b>${txt}</b></span>`;
+  }
+  q.innerHTML = html;
+}
+
+// ---------- Drawing ----------
+function fitCanvas(cv){
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = parseInt(cv.getAttribute('height'));
+  if(cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); return {g, w, h};
+}
+const traceCols = ['--c0','--c1','--c2','--c3'];
+function drawEEG(){
+  const {g, w, h} = fitCanvas($('cvEEG'));
+  g.clearRect(0,0,w,h);
+  const secs = +$('selWin').value, scale = +$('selScale').value, n = secs*FS;
+  const lane = h/4;
+  for(let c=0;c<4;c++){
+    const mid = lane*c + lane/2;
+    g.strokeStyle = '#1d2832'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, mid); g.lineTo(w, mid); g.stroke();
+    g.fillStyle = css(traceCols[c]); g.font = '11px system-ui'; g.fillText(CH_NAMES[c], 6, lane*c + 13);
+    if(wpos[c] < 2) continue;
+    g.strokeStyle = css(traceCols[c]); g.lineWidth = 1.2; g.beginPath();
+    const avail = Math.min(n, wpos[c]), step = Math.max(1, Math.floor(avail / w));
+    for(let k=0;k<avail;k+=step){
+      const v = ring[c][(wpos[c] - avail + k) % RING];
+      const x = w - (avail - k) / n * w;
+      const y = Math.max(lane*c, Math.min(lane*(c+1), mid - v / scale * (lane/2)));
+      k === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+}
+function drawHist(){
+  const {g, w, h} = fitCanvas($('cvHist'));
+  g.clearRect(0,0,w,h);
+  g.strokeStyle = '#1d2832'; g.lineWidth = 1;
+  for(let i=1;i<4;i++){ g.beginPath(); g.moveTo(0, h*i/4); g.lineTo(w, h*i/4); g.stroke(); }
+  if(bandHist.length < 2) return;
+  BANDS.forEach((b,bi) => {
+    g.strokeStyle = css(b.col); g.lineWidth = 1.6; g.beginPath();
+    bandHist.forEach((r,i) => {
+      const x = w - (bandHist.length - 1 - i) / 119 * w, y = h - r[bi] * h * 1.0;
+      i === 0 ? g.moveTo(x, y) : g.lineTo(x, y);
+    });
+    g.stroke();
+  });
+}
+
+// ---------- UI wiring ----------
+BANDS.forEach((b,i) => {
+  $('bars').insertAdjacentHTML('beforeend',
+    `<div class="bar"><span>${b.name}<br><span class="mut">${b.lo}–${b.hi} Hz</span></span>
+     <div class="track"><div class="fill" id="fill${i}" style="background:var(${b.col})"></div></div><span id="val${i}">–</span></div>`);
+  $('legend').insertAdjacentHTML('beforeend', `<span><i style="background:var(${b.col})"></i>${b.name}</span>`);
+});
+$('btnConnect').onclick = connect;
+$('btnDisc').onclick = disconnect;
+$('btnRec').onclick = () => recording ? stopRecording() : startRecording();
+
+setInterval(() => {
+  const now = performance.now();
+  rate = pktCount * 12 / 4 / ((now - rateT0)/1000); // samples/s per channel
+  pktCount = 0; rateT0 = now;
+  $('stRate').textContent = connected ? Math.round(rate) + ' Hz' : '–';
+}, 1000);
+setInterval(updateBands, 250);
+setInterval(() => { logBandRow(); if(recording) $('stRec').innerHTML = '<span class="dot" style="background:var(--bad)"></span>REC ' + Math.floor((Date.now()-recStart)/1000) + ' s'; }, 1000);
+setInterval(updateQuality, 1000);
+(function loop(){ drawEEG(); drawHist(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>

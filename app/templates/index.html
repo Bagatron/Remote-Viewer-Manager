@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block head %}{% if pending %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Upload sessions</h2>
+  <form action="/upload" method="post" enctype="multipart/form-data">
+    <div class="row">
+      <label>Muse Monitor CSV or Excel (.csv / .xlsx, up to {{ max_mb }} MB each)
+        <input type="file" name="files" accept=".csv,.xlsx,.xlsm" multiple required>
+      </label>
+      <label>Smoothing window <input type="number" name="window" value="7" min="1"></label>
+      <label>Top windows <input type="number" name="top_n" value="3" min="1" max="20"></label>
+      <label>Min gap (s) <input type="number" name="min_gap" value="20" min="0"></label>
+      <button type="submit">Analyze</button>
+    </div>
+  </form>
+</div>
+
+{% if trend_ready %}
+<div class="panel">
+  <h2>Trend across sessions and trials</h2>
+  <img class="plot" src="/trend.png?t={{ n_trend }}-{{ sessions|length }}" alt="Trend of mean RV index across uploaded sessions and RV trial recordings">
+  <p class="muted" style="font-size:13px;margin:8px 0 0">{{ n_trend_sessions }} uploaded session{{ '' if n_trend_sessions == 1 else 's' }}{% if n_trend_trials %} and {{ n_trend_trials }} recording{{ '' if n_trend_trials == 1 else 's' }} captured during RV trials{% endif %}, oldest to newest.
+  {% if n_trend_trials %}Trial recordings are analyzed in the app from Bluetooth data and uploads come from Muse Monitor, so compare the shape over time rather than exact values between the two.{% endif %}</p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Sessions ({{ sessions|length }})</h2>
+  {% if sessions %}
+  <table>
+    <tr><th>Name</th><th>Uploaded</th><th>Status</th><th>Duration</th><th>Mean Theta-Beta</th><th>Peak RV (z)</th></tr>
+    {% for s in sessions %}
+    <tr>
+      <td><a href="/sessions/{{ s.id }}">{{ s.name }}</a></td>
+      <td class="muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+      <td><span class="badge {{ s.status }}">{{ s.status }}</span></td>
+      {% if s.status == 'done' %}
+      <td>{{ (s.metrics.duration_sec / 60)|round(1) }} min</td>
+      <td>{{ s.metrics.rv_raw_mean|round(3) }}</td>
+      <td>{{ s.metrics.rv_max|round(2) }}</td>
+      {% else %}<td colspan="3" class="muted">{{ s.error or '' }}</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No sessions yet. Upload a Muse Monitor export above.</p>{% endif %}
+</div>
+{% endblock %}

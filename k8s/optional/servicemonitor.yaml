@@ -1,0 +1,17 @@
+# Requires the Prometheus Operator CRDs. Apply separately:
+#   kubectl apply -n rv-analyzer -f k8s/optional/servicemonitor.yaml
+# If your Prometheus only selects ServiceMonitors with a label (kube-prometheus-stack does, "release: <helm release>"),
+# add it under metadata.labels. Find it with:
+#   kubectl get prometheus -A -o jsonpath='{.items[*].spec.serviceMonitorSelector}'
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rv-analyzer
+  labels:
+    app: rv-analyzer
+    # release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels: {app: rv-analyzer}
+  endpoints:
+    - {port: http, path: /metrics, interval: 30s, scrapeTimeout: 10s}
